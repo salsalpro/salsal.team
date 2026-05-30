@@ -24,3 +24,48 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.bg-Gradient-main { 
+  background-image: url(/1.webp);
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.glass {
+background: rgba(255,255,255,0.75);
+backdrop-filter: blur(22px) saturate(180%);
+border-radius: 16px;
+border: 1px solid rgba(255,255,255,0.3);
+box-shadow:
+  inset 0 1px 1px rgba(255,255,255,0.8),
+  0 12px 32px rgba(0,0,0,0.1);
+}
+
+.main-bg{
+  background-color: #f7f9fb !important;
+}
+
+.shadowbx {
+  box-shadow: rgba(255, 255, 255, 0.9) 0rem 0rem 0.0625rem 0.0625rem inset, rgba(0, 0, 0, 0.05) 0rem 1.25rem 1.6875rem 0rem;
+}
+
+.text-color {
+  color: #344767;
+}
+
+.bg-button {
+  background-color: rgb(33, 212, 253);
+}
+
+
+
+
+
+
+
+
+
+
+
+
