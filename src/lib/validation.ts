@@ -40,6 +40,12 @@ export const projectSchema = z.object({
 }).strict();
 export const projectUpdateSchema = projectSchema.partial();
 export const serviceSettingSchema = z.object({ visible: z.boolean(), sortOrder: z.number().int().min(0).max(100) }).strict();
+export const serviceAssignmentSchema = z.object({
+  serviceSlug: z.enum(serviceIds), package: localizedShort,
+  status: z.enum(["active", "completed", "paused"]), startDate: z.iso.date(), endDate: z.iso.date(),
+  progress: z.number().int().min(0).max(100), team: z.string().trim().min(1).max(150), latestUpdate: localizedSchema,
+}).strict();
+export const serviceAssignmentUpdateSchema = serviceAssignmentSchema.partial();
 export const deliverableSchema = z.object({ title: localizedShort, filename: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}\.(txt|csv|md)$/), content: z.string().min(1).max(200000) }).strict();
 export const portfolioSchema = z.object({
   slug: z.string().trim().min(3).max(150).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/), title: localizedShort,
@@ -51,3 +57,4 @@ export type LeadInput = z.infer<typeof leadSchema>;
 export type BlogInput = z.infer<typeof blogSchema>;
 export type ProjectInput = z.infer<typeof projectSchema>;
 export type PortfolioInput = z.infer<typeof portfolioSchema>;
+export type ServiceAssignmentInput = z.infer<typeof serviceAssignmentSchema>;

@@ -10,11 +10,12 @@ import { dashboardMessages, statusLabel } from '@/content/dashboard-messages';
 export function useMutation(locale: Locale) {
   const router = useRouter();
   const t = dashboardMessages(locale);
+  const messages = { en: { invalid: 'Some fields need attention. Check the submitted values and try again.', conflict: 'This URL slug is already in use, or the selected record is no longer available.', auth: 'Your session has expired. Sign in again to continue.' }, fa: { invalid: 'برخی اطلاعات نیاز به اصلاح دارند. مقادیر فرم را بررسی و دوباره تلاش کنید.', conflict: 'این شناسه نشانی قبلاً استفاده شده یا رکورد انتخاب‌شده دیگر در دسترس نیست.', auth: 'نشست شما منقضی شده است. برای ادامه دوباره وارد حساب شوید.' } }[locale];
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   async function mutate(url: string, body: unknown, method = 'PATCH') {
     setPending(true); setFeedback(null);
-    try { const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); const result: { error?: string } = await response.json(); if (!response.ok) { setFeedback({ type: 'error', message: t.error }); return false; } if (result.error) { setFeedback({ type: 'error', message: t.error }); return false; } setFeedback({ type: 'success', message: t.saved }); router.refresh(); return true; }
+    try { const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); const result: { error?: string } = await response.json(); if (!response.ok) { setFeedback({ type: 'error', message: response.status === 400 ? messages.invalid : response.status === 409 ? messages.conflict : response.status === 401 ? messages.auth : t.error }); return false; } if (result.error) { setFeedback({ type: 'error', message: t.error }); return false; } setFeedback({ type: 'success', message: t.saved }); router.refresh(); return true; }
     catch { setFeedback({ type: 'error', message: t.error }); return false; }
     finally { setPending(false); }
   }

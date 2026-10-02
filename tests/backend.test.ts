@@ -5,7 +5,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { getDb, migrateDomain } from "../src/lib/db";
 import { blogSchema, leadSchema, projectSchema, deliverableSchema } from "../src/lib/validation";
-import { createProject, createDeliverable, getProject, getAuthorizedDeliverable, listProjects, createBlogPost, getBlogPost, listBlogPosts, consumeRateLimit, createLead, listLeads, updateLead, getProfile, updateProfile, getAdminOverview } from "../src/lib/repository";
+import { createProject, createDeliverable, getProject, getAuthorizedDeliverable, listProjects, createBlogPost, updateBlogPost, getBlogPost, listBlogPosts, consumeRateLimit, createLead, listLeads, updateLead, getProfile, updateProfile, getAdminOverview } from "../src/lib/repository";
 
 const directory = path.join(process.cwd(), "work", `test-${randomUUID()}`);
 mkdirSync(directory, { recursive: true });
@@ -41,6 +41,13 @@ test("migrations are repeatable and tracked", () => {
   assert.equal((getDb().prepare("SELECT COUNT(*) AS count FROM schema_migration").get() as { count: number }).count, 1);
 });
 
+test("Better Auth ISO timestamps are represented correctly in profiles and registration analytics", () => {
+  const profile = getProfile(ownerId)!;
+  assert.ok(Math.abs(Date.parse(profile.createdAt) - Date.now()) < 60000);
+  const registrations = getAdminOverview().registrationSeries;
+  assert.equal(registrations.reduce((total, day) => total + day.count, 0), 3);
+});
+
 test("lead validation rejects missing contact, invalid service and injected fields", () => {
   const valid = { name: "Client", email: "hello@example.test", service: "seo", message: "We need a considered search strategy for our website." };
   assert.equal(leadSchema.safeParse(valid).success, true);
@@ -68,6 +75,11 @@ test("draft blog content is excluded from public lookup and listing", () => {
   assert.equal(getBlogPost(post.slug, { publishedOnly: true }), null);
   assert.equal(listBlogPosts({ publishedOnly: true }).length, 0);
   assert.equal(getBlogPost(post.id)?.published, false);
+  updateBlogPost(post.id, { published: true });
+  assert.equal(getBlogPost(post.slug, { publishedOnly: true })?.id, post.id);
+  updateBlogPost(post.id, { published: false });
+  assert.equal(getBlogPost(post.slug, { publishedOnly: true }), null);
+  assert.equal(listBlogPosts({ publishedOnly: true }).length, 0);
 });
 
 test("lead workflow and admin counts use persisted application records", () => {
@@ -102,4 +114,41 @@ test("authenticated writes reject a cross-origin request", async () => {
   const { PATCH } = await import("../src/app/api/profile/route");
   const response = await PATCH(new Request("http://localhost:3000/api/profile", { method: "PATCH", headers: { cookie: userCookie, "content-type": "application/json", origin: "https://untrusted.example" }, body: JSON.stringify({ name: "Attacker" }) }));
   assert.equal(response.status, 403);
+});
+
+test("project and file HTTP routes return 404 for another user's resources", async () => {
+  const { auth } = await import("../src/lib/auth");
+  const response = await auth.api.signInEmail({ body: { email: "stranger@example.test", password: "ValidTestPassword-2049" }, asResponse: true });
+  const cookie = response.headers.getSetCookie().map((entry) => entry.split(";")[0]).join("; ");
+  const project = listProjects({ userId: ownerId })[0];
+  const { GET: getProjectRoute } = await import("../src/app/api/projects/[id]/route");
+  const { GET: getFileRoute } = await import("../src/app/api/deliverables/[id]/route");
+  assert.equal((await getProjectRoute(new Request(`http://localhost:3000/api/projects/${project.id}`, { headers: { cookie } }), { params: Promise.resolve({ id: project.id }) })).status, 404);
+  assert.equal((await getFileRoute(new Request(`http://localhost:3000/api/deliverables/${project.deliverables[0].id}`, { headers: { cookie } }), { params: Promise.resolve({ id: project.deliverables[0].id }) })).status, 404);
+  assert.equal((await getFileRoute(new Request(`http://localhost:3000/api/deliverables/${project.deliverables[0].id}`, { headers: { cookie: userCookie } }), { params: Promise.resolve({ id: project.deliverables[0].id }) })).status, 200);
+});
+
+test("an existing session loses admin API access immediately after demotion", async () => {
+  const { GET } = await import("../src/app/api/admin/users/route");
+  getDb().prepare('UPDATE "user" SET role=\'USER\' WHERE email=?').run("admin@example.test");
+  assert.equal((await GET(new Request("http://localhost:3000/api/admin/users", { headers: { cookie: adminCookie } }))).status, 403);
+});
+
+test("service assignments require admin and stay scoped to the selected customer", async () => {
+  getDb().prepare('UPDATE "user" SET role=\'ADMIN\' WHERE email=?').run("admin@example.test");
+  const { POST } = await import("../src/app/api/admin/users/[id]/services/route");
+  const { PATCH } = await import("../src/app/api/admin/users/[id]/services/[serviceId]/route");
+  const input = { serviceSlug: "seo", package: localized, status: "active", startDate: "2026-10-01", endDate: "2027-01-01", progress: 10, team: "Studio", latestUpdate: localized };
+  const request = (cookie: string, body: unknown = input, method = "POST") => new Request(`http://localhost:3000/api/admin/users/${ownerId}/services`, { method, headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await POST(request(userCookie), { params: Promise.resolve({ id: ownerId }) })).status, 403);
+  assert.equal((await POST(request(adminCookie, { ...input, userId: strangerId }), { params: Promise.resolve({ id: ownerId }) })).status, 400);
+  const response = await POST(request(adminCookie), { params: Promise.resolve({ id: ownerId }) });
+  assert.equal(response.status, 201);
+  const { service } = await response.json() as { service: { id: string; userId: string; isDemo: boolean } };
+  assert.equal(service.userId, ownerId);
+  assert.equal(service.isDemo, false);
+  assert.equal((await PATCH(request(adminCookie, { progress: 40 }, "PATCH"), { params: Promise.resolve({ id: strangerId, serviceId: service.id }) })).status, 404);
+  const update = await PATCH(request(adminCookie, { progress: 40 }, "PATCH"), { params: Promise.resolve({ id: ownerId, serviceId: service.id }) });
+  assert.equal(update.status, 200);
+  assert.equal(((await update.json()) as { service: { progress: number } }).service.progress, 40);
 });

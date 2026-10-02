@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { getDb } from "./db";
 import type { BlogPost, ClientService, Deliverable, Lead, Localized, Milestone, Notification, PortfolioProject, Project, Report, Role, ServiceSetting, UserSummary } from "./domain";
-import type { BlogInput, LeadInput, PortfolioInput, ProjectInput } from "./validation";
+import type { BlogInput, LeadInput, PortfolioInput, ProjectInput, ServiceAssignmentInput } from "./validation";
 import { serviceIds } from "./validation";
 
 type Row = Record<string, unknown>;
@@ -49,7 +49,8 @@ export function updateLead(id: string, status: Lead["status"], notes: string): b
 }
 
 export function listUsers(options: { search?: string; role?: string; page?: number; pageSize?: number } = {}) {
-  const page = Math.max(1, Math.floor(options.page || 1)); const pageSize = Math.min(100, Math.max(1, options.pageSize || 20));
+  const page = Number.isFinite(options.page) ? Math.max(1, Math.min(100000, Math.floor(options.page!))) : 1;
+  const pageSize = Number.isFinite(options.pageSize) ? Math.min(100, Math.max(1, Math.floor(options.pageSize!))) : 20;
   const clauses: string[] = []; const params: unknown[] = [];
   if (options.search) { clauses.push('(u.name LIKE ? OR u.email LIKE ?)'); params.push(`%${options.search}%`, `%${options.search}%`); }
   if (options.role) { clauses.push("u.role=?"); params.push(options.role); }
@@ -64,7 +65,7 @@ export function getProfile(id: string): UserSummary | null {
 }
 export function updateProfile(id: string, input: { name: string; company: string; phone: string; locale: string }) {
   getDb().transaction(() => {
-    getDb().prepare('UPDATE "user" SET name=?,updatedAt=? WHERE id=?').run(input.name, Date.now(), id);
+    getDb().prepare('UPDATE "user" SET name=?,updatedAt=? WHERE id=?').run(input.name, now(), id);
     getDb().prepare("INSERT INTO profile(user_id,company,phone,locale) VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET company=excluded.company,phone=excluded.phone,locale=excluded.locale").run(id, input.company, input.phone, input.locale);
   })();
   return getProfile(id);
@@ -98,6 +99,21 @@ export function updateProject(id: string, input: Partial<ProjectInput>): Project
 }
 export function listClientServices(userId: string): ClientService[] {
   return (getDb().prepare("SELECT * FROM client_service WHERE user_id=? ORDER BY start_date DESC").all(userId) as Row[]).map(mapService);
+}
+export function getClientService(id: string, userId: string): ClientService | null {
+  const row = getDb().prepare("SELECT * FROM client_service WHERE id=? AND user_id=?").get(id, userId) as Row | undefined;
+  return row ? mapService(row) : null;
+}
+export function createServiceAssignment(userId: string, input: ServiceAssignmentInput): ClientService {
+  const id = randomUUID();
+  getDb().prepare("INSERT INTO client_service(id,user_id,service_slug,package,status,start_date,end_date,progress,team,latest_update) VALUES (?,?,?,?,?,?,?,?,?,?)").run(id, userId, input.serviceSlug, JSON.stringify(input.package), input.status, input.startDate, input.endDate, input.progress, input.team, JSON.stringify(input.latestUpdate));
+  return getClientService(id, userId)!;
+}
+export function updateServiceAssignment(id: string, userId: string, input: Partial<ServiceAssignmentInput>): ClientService | null {
+  const existing = getClientService(id, userId); if (!existing) return null;
+  const value = { ...existing, ...input };
+  getDb().prepare("UPDATE client_service SET service_slug=?,package=?,status=?,start_date=?,end_date=?,progress=?,team=?,latest_update=? WHERE id=? AND user_id=?").run(value.serviceSlug, JSON.stringify(value.package), value.status, value.startDate, value.endDate, value.progress, value.team, JSON.stringify(value.latestUpdate), id, userId);
+  return getClientService(id, userId);
 }
 export function getDashboardData(userId: string) {
   const projects = listProjects({ userId }); const services = listClientServices(userId);
@@ -163,7 +179,9 @@ export function updateServiceSetting(slug: string, value: { visible: boolean; so
 }
 export function getAdminOverview() {
   const leadRows = getDb().prepare("SELECT substr(created_at,1,10) AS date,COUNT(*) AS count FROM lead WHERE created_at>=? GROUP BY date ORDER BY date").all(new Date(Date.now() - 30 * 86400000).toISOString()) as { date: string; count: number }[];
-  const registrationRows = getDb().prepare('SELECT date(createdAt / 1000,\'unixepoch\') AS date,COUNT(*) AS count FROM "user" WHERE createdAt>=? GROUP BY date ORDER BY date').all(Date.now() - 30 * 86400000) as { date: string; count: number }[];
+  // Better Auth's current SQLite adapter stores ISO text; support older numeric millisecond values too.
+  const registrationDate = "CASE WHEN typeof(createdAt) IN ('integer','real') THEN date(createdAt / 1000,'unixepoch') ELSE date(createdAt) END";
+  const registrationRows = getDb().prepare(`SELECT ${registrationDate} AS date,COUNT(*) AS count FROM "user" WHERE ${registrationDate}>=? GROUP BY date ORDER BY date`).all(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)) as { date: string; count: number }[];
   const series = (rows: { date: string; count: number }[]) => Array.from({ length: 14 }, (_, index) => { const day = new Date(Date.now() - (13 - index) * 86400000).toISOString().slice(0, 10); return { date: day, count: rows.find((row) => row.date === day)?.count || 0 }; });
   return {
     stats: { users: count('SELECT COUNT(*) AS count FROM "user"'), customers: count('SELECT COUNT(*) AS count FROM "user" WHERE role=\'USER\''), services: serviceIds.length, activeServices: count("SELECT COUNT(*) AS count FROM client_service WHERE status='active'"), projects: count("SELECT COUNT(*) AS count FROM project"), activeProjects: count("SELECT COUNT(*) AS count FROM project WHERE status IN ('active','review')"), completedProjects: count("SELECT COUNT(*) AS count FROM project WHERE status='completed'"), leads: count("SELECT COUNT(*) AS count FROM lead"), newLeads: count("SELECT COUNT(*) AS count FROM lead WHERE status='new'"), blogPosts: count("SELECT COUNT(*) AS count FROM blog_post"), publishedArticles: count("SELECT COUNT(*) AS count FROM blog_post WHERE published=1"), portfolio: count("SELECT COUNT(*) AS count FROM portfolio") },

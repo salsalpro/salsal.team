@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { messages, type Messages } from '@/content/messages';
 export const locales = ['en', 'fa'] as const;
 export type Locale = (typeof locales)[number];
-export const defaultLocale: Locale = 'en';
+export const defaultLocale: Locale = 'fa';
 export const directions: Record<Locale, 'ltr' | 'rtl'> = { en: 'ltr', fa: 'rtl' };
 export function isLocale(value: string): value is Locale { return locales.some((locale) => locale === value); }
 export function getLocale(value: string): Locale { if (!isLocale(value)) notFound(); return value; }

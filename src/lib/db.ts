@@ -6,7 +6,8 @@ const globalDb = globalThis as typeof globalThis & { salsalDb?: Database.Databas
 
 export function getDb(): Database.Database {
   if (globalDb.salsalDb) return globalDb.salsalDb;
-  const filename = path.resolve(process.env.DATABASE_PATH || ".data/salsal.sqlite");
+  // The operator supplies the runtime database separately; do not trace its parent directory into a build.
+  const filename = path.resolve(/* turbopackIgnore: true */ process.env.DATABASE_PATH || ".data/salsal.sqlite");
   mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
   const db = new Database(filename);
   db.pragma("journal_mode = WAL");

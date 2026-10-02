@@ -10,7 +10,7 @@ import { CustomerOverview, CustomerProjectDetail, CustomerProjects, CustomerRepo
 import { DemoNotice, PageHeading, Panel } from '@/components/dashboard/primitives';
 import { ProfileForm } from '@/components/dashboard/forms';
 
-export const metadata: Metadata = { title: 'Client workspace | Salsal', robots: { index: false, follow: false } };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> { const locale = getLocale((await params).locale); return { title: `${dashboardMessages(locale).customer} | Salsal`, robots: { index: false, follow: false } }; }
 export const dynamic = 'force-dynamic';
 type Props = { params: Promise<{ locale: string; section?: string[] }> };
 export default async function DashboardPage({ params }: Props) {
