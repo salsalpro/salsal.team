@@ -1,0 +1,3 @@
+import {BarChart3,Camera,Clapperboard,Code2,Globe2,Instagram,Layers,MousePointer2,Search,Video,Megaphone,Palette,Users,PenTool} from 'lucide-react';
+const icons:Record<string,typeof Search>={ 'digital-marketing':Globe2,'instagram-marketing':Instagram,'social-media':Users,seo:Search,'web-development':Code2,wordpress:Layers,'video-editing':Clapperboard,videography:Video,photography:Camera,analytics:BarChart3,branding:Palette,content:PenTool,ads:MousePointer2,megaphone:Megaphone};
+export function ServiceIcon({name,size=22}: {name:string;size?:number}) {const Icon=icons[name]||Globe2;return <Icon size={size} strokeWidth={1.6} aria-hidden="true"/>;}

@@ -1,0 +1,6 @@
+import Link from 'next/link';
+import {dictionary,formatDate,type Locale} from '@/lib/i18n';
+import type {BlogPost,PortfolioProject} from '@/lib/domain';
+import {ProjectCover} from './sections';
+export function PortfolioCards({locale,projects}: {locale:Locale;projects:PortfolioProject[]}) {return <div className="work-grid">{projects.map((p,i)=><Link className="project-card" href={`/${locale}/portfolio/${p.slug}`} key={p.id}><ProjectCover index={i} locale={locale}/><div className="project-meta"><h3>{p.title[locale]}</h3><span>{new Date(p.date).getFullYear()}</span></div><p>{p.industry[locale]}</p></Link>)}</div>}
+export function ArticleCards({locale,articles}: {locale:Locale;articles:BlogPost[]}) {const d=dictionary(locale);return articles.length?<div className="insights-grid">{articles.map(a=><Link className="article-card" href={`/${locale}/blog/${a.slug}`} key={a.id}><span className="article-category">{a.category[locale]}</span><h3>{a.title[locale]}</h3><p>{a.excerpt[locale]}</p><div className="article-meta"><span>{formatDate(a.publishedAt||a.createdAt,locale)}</span><span>·</span><span>{d.blog.readArticle}</span></div></Link>)}</div>:<div className="empty-state"><p>{d.blog.empty}</p></div>}
