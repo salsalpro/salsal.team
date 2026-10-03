@@ -14,10 +14,12 @@ Node.js 22.23.3, npm 10.9.9, Next.js 16.3.8, and local Google Chrome.
 | `npm run typecheck` | Passed.                                                                          |
 | `npm test`          | Passed: 13 backend tests.                                                        |
 | `npm run build`     | Passed; production routes compiled.                                              |
-| `npm run test:e2e`  | Final verification pending after the form hydration fix.                         |
+| `npm run test:e2e`  | Passed: all 10 browser tests (55.5 seconds).                                     |
 | `git diff --check`  | Passed.                                                                          |
 
 An initial restricted-environment build could not spawn the TypeScript subprocess. After the required local execution/network permissions were granted, the normal production build passed without disabling type checking.
+
+The final browser failure was a test navigation race: the test selected the lead list's status filter before the detail editor loaded. Waiting for the detail heading and scoping controls to its editor resolved it. The final run verified that status and notes persist after a reload. No lead persistence rewrite was required. The runner emitted only a terminal-color environment warning (`NO_COLOR` with `FORCE_COLOR`); all checks completed successfully.
 
 ## Coverage
 
