@@ -178,14 +178,20 @@ test("contact validation, loading, success and persisted admin lead workflow", a
   await page
     .getByRole("link", { name: "Browser Test Inquiry", exact: true })
     .click();
-  await page
+  await expect(
+    page.getByRole("heading", { name: "Browser Test Inquiry", exact: true }),
+  ).toBeVisible();
+  const editor = page
+    .locator("form")
+    .filter({ has: page.getByLabel("Internal notes") });
+  await editor
     .getByRole("combobox", { name: "Status", exact: true })
     .selectOption("qualified");
-  await page
+  await editor
     .getByLabel("Internal notes")
     .fill("Consultation reviewed during isolated browser test.");
   await expect(
-    page.getByRole("combobox", { name: "Status", exact: true }),
+    editor.getByRole("combobox", { name: "Status", exact: true }),
   ).toHaveValue("qualified");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Changes saved");
