@@ -1,1 +1,17 @@
-export default function LoadingWorkspace() { return <div className="workspace-loading" role="status" aria-label="Loading / در حال بارگذاری"><span className="workspace-loading-dot" /><div className="workspace-loading-line" /><div className="workspace-loading-cards"><span /><span /><span /></div></div>; }
+export default function LoadingWorkspace() {
+  return (
+    <div
+      className="workspace-loading"
+      role="status"
+      aria-label="Loading / در حال بارگذاری"
+    >
+      <span className="workspace-loading-dot" />
+      <div className="workspace-loading-line" />
+      <div className="workspace-loading-cards">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  );
+}

@@ -18,7 +18,7 @@ npm run dev
 
 Open `http://localhost:3000/en` or `http://localhost:3000/fa`. Use `localhost` consistently for authentication because it must match the configured auth origin.
 
-`npm run setup` creates `.data/`, generates a random authentication secret in a private `.env.local` when that file does not exist, and applies database migrations. It preserves an existing environment file. No external database account is needed for local use.
+`npm run setup` creates `.data/` with owner-only access (and tightens that directory's permissions if it already exists), generates a random authentication secret in a private `.env.local` when that file does not exist, and applies database migrations. It preserves an existing environment file. No external database account is needed for local use.
 
 The optional seed inserts three clearly labeled fictional portfolio concepts, three bilingual articles, and demonstration workspace records. Generated account passwords are stored privately in **`.data/demo-credentials.json`**; do not publish or commit that file. The seed does not overwrite existing account passwords. Set `SEED_DEMO_ACCOUNTS=false` before seeding to add public content without creating accounts.
 
@@ -109,20 +109,20 @@ This creates a new administrator and prints no credentials. It refuses to modify
 
 See `.env.example`. Local setup generates the essential values; deployment must supply the real URLs and secret.
 
-| Variable                                      | Purpose                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `BETTER_AUTH_SECRET`                          | Random secret, at least 32 characters; keep private and stable across restarts.                  |
-| `BETTER_AUTH_URL`                             | Authentication origin, locally `http://localhost:3000`.                                          |
-| `NEXT_PUBLIC_SITE_URL`                        | Public canonical origin used in metadata and sitemap.                                            |
-| `DATABASE_PATH`                               | Persistent SQLite file path; default `.data/salsal.sqlite`.                                      |
-| `TRUST_PROXY`                                 | Default `false`. Enable only behind an ingress that replaces client-supplied forwarding headers. |
-| `SEED_DEMO_ACCOUNTS`                          | Set to `false` to seed public content only. Used by the development seed command.                |
-| `DEMO_ADMIN_EMAIL`, `DEMO_CLIENT_EMAIL`       | Optional development account email overrides.                                                    |
-| `DEMO_ADMIN_PASSWORD`, `DEMO_CLIENT_PASSWORD` | Optional development passwords; otherwise random passwords are generated.                        |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Private inputs for one-time `npm run admin:create`; name is optional.                            |
-| `CHROME_PATH`                                 | Optional browser executable for Playwright; current default is `/usr/bin/google-chrome`.         |
+| Variable                                      | Purpose                                                                                                                                                                          |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`                          | Random secret, at least 32 characters; keep private and stable across restarts.                                                                                                  |
+| `BETTER_AUTH_URL`                             | Authentication origin, locally `http://localhost:3000`.                                                                                                                          |
+| `NEXT_PUBLIC_SITE_URL`                        | Public canonical origin used in metadata and sitemap.                                                                                                                            |
+| `DATABASE_PATH`                               | Persistent SQLite file path; default `.data/salsal.sqlite`.                                                                                                                      |
+| `TRUST_PROXY`                                 | Controls the contact form's IP-based throttle only. Default `false` shares a 30-per-hour bucket. Enable only behind an ingress that replaces client-supplied forwarding headers. |
+| `SEED_DEMO_ACCOUNTS`                          | Set to `false` to seed public content only. Used by the development seed command.                                                                                                |
+| `DEMO_ADMIN_EMAIL`, `DEMO_CLIENT_EMAIL`       | Optional development account email overrides.                                                                                                                                    |
+| `DEMO_ADMIN_PASSWORD`, `DEMO_CLIENT_PASSWORD` | Optional development passwords; otherwise random passwords are generated.                                                                                                        |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Private inputs for one-time `npm run admin:create`; name is optional.                                                                                                            |
+| `CHROME_PATH`                                 | Optional browser executable for Playwright; current default is `/usr/bin/google-chrome`.                                                                                         |
 
-`.env.local`, database files, generated credentials, and test artifacts are ignored by Git. There are no committed production credentials.
+`.env.local`, database files, generated credentials, and test artifacts are ignored by Git. There are no committed production credentials. Authentication has its own Better Auth rate limits; `TRUST_PROXY` does not configure those. The deployment ingress must replace untrusted forwarding headers for authentication requests as well.
 
 ## Verification commands
 
@@ -136,9 +136,9 @@ npm run test:e2e
 
 `npm run format` applies the project’s Prettier formatting.
 
-The browser suite uses the production build on port `3100`, so build first. It requires the local seeded database and generated development credentials, plus an available Chrome executable. Browser checks copy the database to `work/e2e.sqlite`; they do not run mutations against the main development database. `CHROME_PATH` can select a compatible installed browser.
+The browser suite uses the production build on port `3100`, so build first. It requires the seeded database at the default `.data/salsal.sqlite` path and generated `.data/demo-credentials.json`, plus an available Chrome executable. A custom `DATABASE_PATH` is supported by the application, but browser-test preparation currently expects that default source path. Browser checks copy the database to `work/e2e.sqlite`; they do not run mutations against the main development database. `CHROME_PATH` can select a compatible installed browser.
 
-These commands describe how to verify the project; passing results should be taken from the actual command output or the accompanying validation report.
+See [VALIDATION.md](VALIDATION.md) for executed checks, browser coverage, results, and deployment boundaries.
 
 ## Deployment and external integrations
 

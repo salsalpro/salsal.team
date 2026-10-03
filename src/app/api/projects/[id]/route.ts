@@ -3,6 +3,16 @@ import { getProject } from "@/lib/repository";
 import { failure, type IdContext } from "../../_utils";
 
 export async function GET(request: Request, context: IdContext) {
-  try { const user = await requireApiUser(request); const { id } = await context.params; const project = getProject(id, user.id, user.role === "ADMIN"); if (!project) throw new ApiError(404, "Project not found."); return Response.json({ project }); }
-  catch (error) { return failure(error); }
+  try {
+    const user = await requireApiUser(request);
+    const { id } = await context.params;
+    const project = getProject(id, user.id, user.role === "ADMIN");
+    if (!project) throw new ApiError(404, "Project not found.");
+    // Staff notes are private even when the customer owns the project.
+    return Response.json({
+      project: user.role === "ADMIN" ? project : { ...project, notes: "" },
+    });
+  } catch (error) {
+    return failure(error);
+  }
 }

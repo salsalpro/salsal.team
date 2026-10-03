@@ -10,4 +10,7 @@ async function main() {
   migrateDomain();
   console.log("Authentication schema and versioned domain migrations applied.");
 }
-main().catch((error: unknown) => { console.error(error); process.exitCode = 1; });
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});

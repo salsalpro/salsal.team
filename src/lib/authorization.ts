@@ -5,14 +5,23 @@ import { getDb } from "./db";
 import type { Locale, Role } from "./domain";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export async function getSession(requestHeaders?: Headers) {
-  const session = await auth.api.getSession({ headers: requestHeaders || await headers() });
+  const session = await auth.api.getSession({
+    headers: requestHeaders || (await headers()),
+  });
   if (!session) return null;
   // Consult the database for every permission decision, including after a role change.
-  const user = getDb().prepare('SELECT role FROM "user" WHERE id = ?').get(session.user.id) as { role: Role } | undefined;
+  const user = getDb()
+    .prepare('SELECT role FROM "user" WHERE id = ?')
+    .get(session.user.id) as { role: Role } | undefined;
   if (!user) return null;
   return { ...session, user: { ...session.user, role: user.role } };
 }
@@ -33,14 +42,19 @@ export async function requireAdmin(locale: Locale = "en") {
 export async function requireApiUser(request: Request, admin = false) {
   const session = await getSession(request.headers);
   if (!session) throw new ApiError(401, "Authentication required.");
-  if (admin && session.user.role !== "ADMIN") throw new ApiError(403, "Administrator access required.");
+  if (admin && session.user.role !== "ADMIN")
+    throw new ApiError(403, "Administrator access required.");
   return session.user;
 }
 
 export function verifyOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  const allowedOrigin = new URL(process.env.BETTER_AUTH_URL || request.url).origin;
-  if ((origin && origin !== allowedOrigin) || request.headers.get("sec-fetch-site") === "cross-site") {
+  const allowedOrigin = new URL(process.env.BETTER_AUTH_URL || request.url)
+    .origin;
+  if (
+    (origin && origin !== allowedOrigin) ||
+    request.headers.get("sec-fetch-site") === "cross-site"
+  ) {
     throw new ApiError(403, "Request origin is not allowed.");
   }
 }

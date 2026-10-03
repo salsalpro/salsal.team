@@ -1,6 +1,70 @@
-import {getLocale,dictionary} from '@/lib/i18n';
-import {pageMetadata} from '@/lib/metadata';
-import {CtaPanel,SectionHeading} from '@/components/public/sections';
-import {Ecosystem} from '@/components/public/ecosystem';
-export async function generateMetadata({params}:{params:Promise<{locale:string}>}){const locale=getLocale((await params).locale);const d=dictionary(locale).about;return pageMetadata(locale,'/about',`${d.title} ${d.accent}`,d.description);}
-export default async function About({params}:{params:Promise<{locale:string}>}){const locale=getLocale((await params).locale);const d=dictionary(locale).about;return <div className="container"><div className="page-hero"><span className="eyebrow">{d.eyebrow}</span><h1>{d.title}<br/><span style={{color:'var(--purple)'}}>{d.accent}</span></h1><p>{d.description}</p></div><section className="section split-intro" style={{paddingTop:30}}><h2>{d.storyTitle}</h2><div className="prose">{d.story.map(s=><p key={s}>{s}</p>)}</div></section><section className="section" style={{paddingTop:0}}><SectionHeading title={d.valuesTitle}/><div className="page-grid">{d.values.map((v,i)=><div className="page-panel" key={v.title}><span className="eyebrow">0{i+1}</span><h3 style={{marginBlock:18}}>{v.title}</h3><p>{v.description}</p></div>)}</div></section><section className="section" style={{paddingTop:0,textAlign:'center'}}><h2>{d.collaborationTitle}</h2><p style={{maxWidth:650,margin:'20px auto'}}>{d.collaborationText}</p><Ecosystem locale={locale}/></section><CtaPanel locale={locale}/></div>}
+import { getLocale, dictionary } from "@/lib/i18n";
+import { pageMetadata } from "@/lib/metadata";
+import { CtaPanel, SectionHeading } from "@/components/public/sections";
+import { Ecosystem } from "@/components/public/ecosystem";
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const locale = getLocale((await params).locale);
+  const d = dictionary(locale).about;
+  return pageMetadata(
+    locale,
+    "/about",
+    `${d.title} ${d.accent}`,
+    d.description,
+  );
+}
+export default async function About({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const locale = getLocale((await params).locale);
+  const d = dictionary(locale).about;
+  return (
+    <div className="container">
+      <div className="page-hero">
+        <span className="eyebrow">{d.eyebrow}</span>
+        <h1>
+          {d.title}
+          <br />
+          <span style={{ color: "var(--purple)" }}>{d.accent}</span>
+        </h1>
+        <p>{d.description}</p>
+      </div>
+      <section className="section split-intro" style={{ paddingTop: 30 }}>
+        <h2>{d.storyTitle}</h2>
+        <div className="prose">
+          {d.story.map((s) => (
+            <p key={s}>{s}</p>
+          ))}
+        </div>
+      </section>
+      <section className="section" style={{ paddingTop: 0 }}>
+        <SectionHeading title={d.valuesTitle} />
+        <div className="page-grid">
+          {d.values.map((v, i) => (
+            <div className="page-panel" key={v.title}>
+              <span className="eyebrow">0{i + 1}</span>
+              <h3 style={{ marginBlock: 18 }}>{v.title}</h3>
+              <p>{v.description}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section
+        className="section"
+        style={{ paddingTop: 0, textAlign: "center" }}
+      >
+        <h2>{d.collaborationTitle}</h2>
+        <p style={{ maxWidth: 650, margin: "20px auto" }}>
+          {d.collaborationText}
+        </p>
+        <Ecosystem locale={locale} />
+      </section>
+      <CtaPanel locale={locale} />
+    </div>
+  );
+}

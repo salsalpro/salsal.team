@@ -1,42 +1,304 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { CheckCircle2, LoaderCircle } from 'lucide-react';
-import type { Locale } from '@/lib/i18n';
-import type { Lead, ServiceSetting, UserSummary } from '@/lib/domain';
-import { dashboardMessages, statusLabel } from '@/content/dashboard-messages';
+import { useRouter } from "next/navigation";
+import {
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { CheckCircle2, LoaderCircle } from "lucide-react";
+import type { Locale } from "@/lib/i18n";
+import type { Lead, ServiceSetting, UserSummary } from "@/lib/domain";
+import { dashboardMessages, statusLabel } from "@/content/dashboard-messages";
+
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
+
+export function FormControls({
+  pending,
+  children,
+}: {
+  pending: boolean;
+  children: ReactNode;
+}) {
+  const ready = useSyncExternalStore(
+    subscribeToHydration,
+    clientReady,
+    serverReady,
+  );
+  return (
+    <fieldset className="workspace-form-controls" disabled={!ready || pending}>
+      {children}
+    </fieldset>
+  );
+}
 
 export function useMutation(locale: Locale) {
   const router = useRouter();
   const t = dashboardMessages(locale);
-  const messages = { en: { invalid: 'Some fields need attention. Check the submitted values and try again.', conflict: 'This URL slug is already in use, or the selected record is no longer available.', auth: 'Your session has expired. Sign in again to continue.' }, fa: { invalid: 'برخی اطلاعات نیاز به اصلاح دارند. مقادیر فرم را بررسی و دوباره تلاش کنید.', conflict: 'این شناسه نشانی قبلاً استفاده شده یا رکورد انتخاب‌شده دیگر در دسترس نیست.', auth: 'نشست شما منقضی شده است. برای ادامه دوباره وارد حساب شوید.' } }[locale];
+  const messages = {
+    en: {
+      invalid:
+        "Some fields need attention. Check the submitted values and try again.",
+      conflict:
+        "This URL slug is already in use, or the selected record is no longer available.",
+      auth: "Your session has expired. Sign in again to continue.",
+    },
+    fa: {
+      invalid:
+        "برخی اطلاعات نیاز به اصلاح دارند. مقادیر فرم را بررسی و دوباره تلاش کنید.",
+      conflict:
+        "این شناسه نشانی قبلاً استفاده شده یا رکورد انتخاب‌شده دیگر در دسترس نیست.",
+      auth: "نشست شما منقضی شده است. برای ادامه دوباره وارد حساب شوید.",
+    },
+  }[locale];
   const [pending, setPending] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  async function mutate(url: string, body: unknown, method = 'PATCH') {
-    setPending(true); setFeedback(null);
-    try { const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); const result: { error?: string } = await response.json(); if (!response.ok) { setFeedback({ type: 'error', message: response.status === 400 ? messages.invalid : response.status === 409 ? messages.conflict : response.status === 401 ? messages.auth : t.error }); return false; } if (result.error) { setFeedback({ type: 'error', message: t.error }); return false; } setFeedback({ type: 'success', message: t.saved }); router.refresh(); return true; }
-    catch { setFeedback({ type: 'error', message: t.error }); return false; }
-    finally { setPending(false); }
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  async function mutate(url: string, body: unknown, method = "PATCH") {
+    setPending(true);
+    setFeedback(null);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const result: { error?: string } = await response.json();
+      if (!response.ok) {
+        setFeedback({
+          type: "error",
+          message:
+            response.status === 400
+              ? messages.invalid
+              : response.status === 409
+                ? messages.conflict
+                : response.status === 401
+                  ? messages.auth
+                  : t.error,
+        });
+        return false;
+      }
+      if (result.error) {
+        setFeedback({ type: "error", message: t.error });
+        return false;
+      }
+      setFeedback({ type: "success", message: t.saved });
+      router.refresh();
+      return true;
+    } catch {
+      setFeedback({ type: "error", message: t.error });
+      return false;
+    } finally {
+      setPending(false);
+    }
   }
   return { pending, feedback, mutate, setFeedback };
 }
-export function MutationFeedback({ feedback }: { feedback: { type: 'success' | 'error'; message: string } | null }) { return feedback ? <p className={`workspace-form-feedback ${feedback.type}`} role={feedback.type === 'error' ? 'alert' : 'status'}>{feedback.type === 'success' && <CheckCircle2 size={16} />}{feedback.message}</p> : null; }
-export function SaveButton({ pending, locale, children }: { pending: boolean; locale: Locale; children?: ReactNode }) { const t = dashboardMessages(locale); return <button className="workspace-button primary" type="submit" disabled={pending}>{pending && <LoaderCircle className="workspace-spin" size={16} />}{pending ? t.saving : children ?? t.save}</button>; }
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) { return <label className="workspace-field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
+export function MutationFeedback({
+  feedback,
+}: {
+  feedback: { type: "success" | "error"; message: string } | null;
+}) {
+  return feedback ? (
+    <p
+      className={`workspace-form-feedback ${feedback.type}`}
+      role={feedback.type === "error" ? "alert" : "status"}
+    >
+      {feedback.type === "success" && <CheckCircle2 size={16} />}
+      {feedback.message}
+    </p>
+  ) : null;
+}
+export function SaveButton({
+  pending,
+  locale,
+  children,
+}: {
+  pending: boolean;
+  locale: Locale;
+  children?: ReactNode;
+}) {
+  const t = dashboardMessages(locale);
+  return (
+    <button
+      className="workspace-button primary"
+      type="submit"
+      disabled={pending}
+    >
+      {pending && <LoaderCircle className="workspace-spin" size={16} />}
+      {pending ? t.saving : (children ?? t.save)}
+    </button>
+  );
+}
+export function Field({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: ReactNode;
+  hint?: string;
+}) {
+  return (
+    <label className="workspace-field">
+      <span>{label}</span>
+      {children}
+      {hint && <small>{hint}</small>}
+    </label>
+  );
+}
 
-export function ProfileForm({ user, locale }: { user: UserSummary; locale: Locale }) {
-  const t = dashboardMessages(locale); const mutation = useMutation(locale);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); await mutation.mutate('/api/profile', { name: data.get('name'), company: data.get('company'), phone: data.get('phone'), locale }); }
-  return <form onSubmit={submit} className="workspace-form"><div className="workspace-form-grid"><Field label={t.name}><input name="name" required minLength={2} maxLength={100} autoComplete="name" defaultValue={user.name} /></Field><Field label={t.email} hint={t.emailHint}><input type="email" value={user.email} readOnly dir="ltr" /></Field><Field label={t.company}><input name="company" maxLength={150} autoComplete="organization" defaultValue={user.company} /></Field><Field label={t.phone}><input name="phone" maxLength={40} type="tel" autoComplete="tel" defaultValue={user.phone} dir="ltr" /></Field></div><MutationFeedback feedback={mutation.feedback} /><SaveButton pending={mutation.pending} locale={locale} /></form>;
+export function ProfileForm({
+  user,
+  locale,
+}: {
+  user: UserSummary;
+  locale: Locale;
+}) {
+  const t = dashboardMessages(locale);
+  const mutation = useMutation(locale);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await mutation.mutate("/api/profile", {
+      name: data.get("name"),
+      company: data.get("company"),
+      phone: data.get("phone"),
+      locale,
+    });
+  }
+  return (
+    <form onSubmit={submit} className="workspace-form">
+      <FormControls pending={mutation.pending}>
+        <div className="workspace-form-grid">
+          <Field label={t.name}>
+            <input
+              name="name"
+              required
+              minLength={2}
+              maxLength={100}
+              autoComplete="name"
+              defaultValue={user.name}
+            />
+          </Field>
+          <Field label={t.email} hint={t.emailHint}>
+            <input type="email" value={user.email} readOnly dir="ltr" />
+          </Field>
+          <Field label={t.company}>
+            <input
+              name="company"
+              maxLength={150}
+              autoComplete="organization"
+              defaultValue={user.company}
+            />
+          </Field>
+          <Field label={t.phone}>
+            <input
+              name="phone"
+              maxLength={40}
+              type="tel"
+              autoComplete="tel"
+              defaultValue={user.phone}
+              dir="ltr"
+            />
+          </Field>
+        </div>
+        <MutationFeedback feedback={mutation.feedback} />
+        <SaveButton pending={mutation.pending} locale={locale} />
+      </FormControls>
+    </form>
+  );
 }
 export function LeadEditor({ lead, locale }: { lead: Lead; locale: Locale }) {
-  const t = dashboardMessages(locale); const mutation = useMutation(locale);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); await mutation.mutate(`/api/admin/leads/${lead.id}`, { status: data.get('status'), notes: data.get('notes') }); }
-  return <form onSubmit={submit} className="workspace-form"><Field label={t.status}><select name="status" defaultValue={lead.status}>{['new', 'contacted', 'qualified', 'converted', 'closed'].map(status => <option key={status} value={status}>{statusLabel(status, locale)}</option>)}</select></Field><Field label={t.notes}><textarea name="notes" rows={5} maxLength={5000} defaultValue={lead.notes} /></Field><MutationFeedback feedback={mutation.feedback} /><SaveButton pending={mutation.pending} locale={locale} /></form>;
+  const t = dashboardMessages(locale);
+  const mutation = useMutation(locale);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await mutation.mutate(`/api/admin/leads/${lead.id}`, {
+      status: data.get("status"),
+      notes: data.get("notes"),
+    });
+  }
+  return (
+    <form onSubmit={submit} className="workspace-form">
+      <FormControls pending={mutation.pending}>
+        <Field label={t.status}>
+          <select name="status" defaultValue={lead.status}>
+            {["new", "contacted", "qualified", "converted", "closed"].map(
+              (status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status, locale)}
+                </option>
+              ),
+            )}
+          </select>
+        </Field>
+        <Field label={t.notes}>
+          <textarea
+            name="notes"
+            rows={5}
+            maxLength={5000}
+            defaultValue={lead.notes}
+          />
+        </Field>
+        <MutationFeedback feedback={mutation.feedback} />
+        <SaveButton pending={mutation.pending} locale={locale} />
+      </FormControls>
+    </form>
+  );
 }
-export function ServiceEditor({ setting, title, locale }: { setting: ServiceSetting; title: string; locale: Locale }) {
-  const t = dashboardMessages(locale); const mutation = useMutation(locale);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); await mutation.mutate(`/api/admin/services/${setting.slug}`, { visible: data.get('visible') === 'on', sortOrder: Number(data.get('sortOrder')) }); }
-  return <form onSubmit={submit} className="workspace-service-editor"><div><strong>{title}</strong><small dir="ltr">/{setting.slug}</small></div><label className="workspace-checkbox"><input type="checkbox" name="visible" defaultChecked={setting.visible} /><span>{t.visible}</span></label><Field label={t.ordering}><input name="sortOrder" type="number" min={0} max={100} defaultValue={setting.sortOrder} /></Field><SaveButton pending={mutation.pending} locale={locale} /><MutationFeedback feedback={mutation.feedback} /></form>;
+export function ServiceEditor({
+  setting,
+  title,
+  locale,
+}: {
+  setting: ServiceSetting;
+  title: string;
+  locale: Locale;
+}) {
+  const t = dashboardMessages(locale);
+  const mutation = useMutation(locale);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await mutation.mutate(`/api/admin/services/${setting.slug}`, {
+      visible: data.get("visible") === "on",
+      sortOrder: Number(data.get("sortOrder")),
+    });
+  }
+  return (
+    <form onSubmit={submit} className="workspace-service-editor">
+      <FormControls pending={mutation.pending}>
+        <div>
+          <strong>{title}</strong>
+          <small dir="ltr">/{setting.slug}</small>
+        </div>
+        <label className="workspace-checkbox">
+          <input
+            type="checkbox"
+            name="visible"
+            defaultChecked={setting.visible}
+          />
+          <span>{t.visible}</span>
+        </label>
+        <Field label={t.ordering}>
+          <input
+            name="sortOrder"
+            type="number"
+            min={0}
+            max={100}
+            defaultValue={setting.sortOrder}
+          />
+        </Field>
+        <SaveButton pending={mutation.pending} locale={locale} />
+        <MutationFeedback feedback={mutation.feedback} />
+      </FormControls>
+    </form>
+  );
 }

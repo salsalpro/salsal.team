@@ -1,13 +1,227 @@
-'use client';
-import {useState,type FormEvent} from 'react';
-import {CheckCircle2} from 'lucide-react';
-import {dictionary,type Locale} from '@/lib/i18n';
-import {getServices} from '@/content/services';
-import {leadSchema} from '@/lib/validation';
-export function ContactForm({locale,selectedService=''}: {locale:Locale;selectedService?:string}) {
- const d=dictionary(locale);const t=d.contact;const [busy,setBusy]=useState(false);const [success,setSuccess]=useState(false);const [error,setError]=useState('');const [issues,setIssues]=useState<Record<string,string>>({});const [method,setMethod]=useState('email');
- async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError('');setIssues({});const form=new FormData(e.currentTarget);const payload=Object.fromEntries(form.entries());const parsed=leadSchema.safeParse(payload);if(!parsed.success){const fieldErrors:Record<string,string>={};parsed.error.issues.forEach(x=>{const key=String(x.path[0]);fieldErrors[key]=t.validation[key as keyof typeof t.validation]||t.validation.generic});setIssues(fieldErrors);setError(t.validation.generic);return;}setBusy(true);try{const res=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(parsed.data)});if(!res.ok){setError(res.status===429?t.validation.rateLimit:t.validation.server);return;}setSuccess(true);}catch{setError(d.common.networkError);}finally{setBusy(false);}}
- if(success)return <div className="page-panel" role="status"><CheckCircle2 size={37} color="var(--purple)"/><h2 style={{marginTop:20}}>{t.successTitle}</h2><p>{t.success}</p><button className="btn btn-secondary" style={{marginTop:25}} onClick={()=>setSuccess(false)}>{t.another}</button></div>;
- const field=(name:string,label:string,type='text',placeholder='',required=false)=><div className="field"><label htmlFor={name}>{label}{required?' *':''}</label><input id={name} name={name} type={type} placeholder={placeholder} required={required} maxLength={name==='name'?100:254} autoComplete={name==='name'?'name':name==='email'?'email':name==='phone'?'tel':'organization'} dir={['email','phone'].includes(name)?'ltr':undefined} aria-invalid={!!issues[name]} aria-describedby={issues[name]?`${name}-error`:undefined}/>{issues[name]&&<span id={`${name}-error`} className="field-error">{issues[name]}</span>}</div>;
- return <form className="page-panel" onSubmit={submit} noValidate aria-busy={busy}><h2>{t.formTitle}</h2>{error&&<div className="form-error" role="alert">{error}</div>}<div className="form-grid">{field('name',t.name,'text',t.namePlaceholder,true)}{field('company',t.company,'text',t.companyPlaceholder)}<div className="field"><label htmlFor="contactMethod">{t.method}</label><select id="contactMethod" name="contactMethod" value={method} onChange={e=>setMethod(e.target.value)}><option value="email">{t.methodEmail}</option><option value="phone">{t.methodPhone}</option></select></div><div className="field"><label htmlFor="preferredLanguage">{t.language}</label><select id="preferredLanguage" name="preferredLanguage" defaultValue={locale}><option value="en">{d.common.english}</option><option value="fa">{d.common.persian}</option></select></div>{field('email',t.email,'email',t.emailPlaceholder,method==='email')}{field('phone',t.phone,'tel',t.phonePlaceholder,method==='phone')}<div className="field"><label htmlFor="service">{t.service} *</label><select name="service" id="service" defaultValue={selectedService} required aria-invalid={!!issues.service}><option value="">{t.servicePlaceholder}</option>{getServices(locale).map(s=><option value={s.slug} key={s.slug}>{s.name}</option>)}</select>{issues.service&&<span className="field-error">{issues.service}</span>}</div><div className="field"><label htmlFor="budget">{t.budget}</label><select name="budget" id="budget" defaultValue=""><option value="">{t.budgetPlaceholder}</option>{t.budgetOptions.map((label,i)=><option value={['undecided','under-2000','2000-5000','5000-15000','15000-plus'][i]} key={label}>{label}</option>)}</select></div><div className="field full"><label htmlFor="message">{t.message} *</label><textarea name="message" id="message" placeholder={t.messagePlaceholder} required minLength={20} maxLength={5000} aria-invalid={!!issues.message}/>{issues.message&&<span className="field-error">{issues.message}</span>}</div><div hidden aria-hidden="true"><label htmlFor="website">Website</label><input id="website" name="website" tabIndex={-1} autoComplete="off"/></div><div className="full field"><button disabled={busy} className="btn" type="submit">{busy?t.sending:t.submit}</button><p className="form-note">{t.privacy}</p></div></div></form>;
+"use client";
+import { useState, type FormEvent } from "react";
+import { CheckCircle2 } from "lucide-react";
+import { dictionary, type Locale } from "@/lib/i18n";
+import { leadSchema } from "@/lib/validation";
+export function ContactForm({
+  locale,
+  selectedService = "",
+  services,
+}: {
+  locale: Locale;
+  selectedService?: string;
+  services: { slug: string; name: string }[];
+}) {
+  const d = dictionary(locale);
+  const t = d.contact;
+  const [busy, setBusy] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+  const [issues, setIssues] = useState<Record<string, string>>({});
+  const [method, setMethod] = useState("email");
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    setIssues({});
+    const form = new FormData(e.currentTarget);
+    const payload = Object.fromEntries(form.entries());
+    const parsed = leadSchema.safeParse(payload);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string> = {};
+      parsed.error.issues.forEach((x) => {
+        const key = String(x.path[0]);
+        fieldErrors[key] =
+          t.validation[key as keyof typeof t.validation] ||
+          t.validation.generic;
+      });
+      setIssues(fieldErrors);
+      setError(t.validation.generic);
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed.data),
+      });
+      if (!res.ok) {
+        setError(
+          res.status === 429 ? t.validation.rateLimit : t.validation.server,
+        );
+        return;
+      }
+      setSuccess(true);
+    } catch {
+      setError(d.common.networkError);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (success)
+    return (
+      <div className="page-panel" role="status">
+        <CheckCircle2 size={37} color="var(--purple)" />
+        <h2 style={{ marginTop: 20 }}>{t.successTitle}</h2>
+        <p>{t.success}</p>
+        <button
+          className="btn btn-secondary"
+          style={{ marginTop: 25 }}
+          onClick={() => setSuccess(false)}
+        >
+          {t.another}
+        </button>
+      </div>
+    );
+  const field = (
+    name: string,
+    label: string,
+    type = "text",
+    placeholder = "",
+    required = false,
+  ) => (
+    <div className="field">
+      <label htmlFor={name}>
+        {label}
+        {required ? " *" : ""}
+      </label>
+      <input
+        id={name}
+        name={name}
+        type={type}
+        placeholder={placeholder}
+        required={required}
+        maxLength={name === "name" ? 100 : 254}
+        autoComplete={
+          name === "name"
+            ? "name"
+            : name === "email"
+              ? "email"
+              : name === "phone"
+                ? "tel"
+                : "organization"
+        }
+        dir={["email", "phone"].includes(name) ? "ltr" : undefined}
+        aria-invalid={!!issues[name]}
+        aria-describedby={issues[name] ? `${name}-error` : undefined}
+      />
+      {issues[name] && (
+        <span id={`${name}-error`} className="field-error">
+          {issues[name]}
+        </span>
+      )}
+    </div>
+  );
+  return (
+    <form className="page-panel" onSubmit={submit} noValidate aria-busy={busy}>
+      <h2>{t.formTitle}</h2>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+      <div className="form-grid">
+        {field("name", t.name, "text", t.namePlaceholder, true)}
+        {field("company", t.company, "text", t.companyPlaceholder)}
+        <div className="field">
+          <label htmlFor="contactMethod">{t.method}</label>
+          <select
+            id="contactMethod"
+            name="contactMethod"
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+          >
+            <option value="email">{t.methodEmail}</option>
+            <option value="phone">{t.methodPhone}</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="preferredLanguage">{t.language}</label>
+          <select
+            id="preferredLanguage"
+            name="preferredLanguage"
+            defaultValue={locale}
+          >
+            <option value="en">{d.common.english}</option>
+            <option value="fa">{d.common.persian}</option>
+          </select>
+        </div>
+        {field(
+          "email",
+          t.email,
+          "email",
+          t.emailPlaceholder,
+          method === "email",
+        )}
+        {field("phone", t.phone, "tel", t.phonePlaceholder, method === "phone")}
+        <div className="field">
+          <label htmlFor="service">{t.service} *</label>
+          <select
+            name="service"
+            id="service"
+            defaultValue={selectedService}
+            required
+            aria-invalid={!!issues.service}
+          >
+            <option value="">{t.servicePlaceholder}</option>
+            {services.map((s) => (
+              <option value={s.slug} key={s.slug}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          {issues.service && (
+            <span className="field-error">{issues.service}</span>
+          )}
+        </div>
+        <div className="field">
+          <label htmlFor="budget">{t.budget}</label>
+          <select name="budget" id="budget" defaultValue="">
+            <option value="">{t.budgetPlaceholder}</option>
+            {t.budgetOptions.map((label, i) => (
+              <option
+                value={
+                  [
+                    "undecided",
+                    "under-2000",
+                    "2000-5000",
+                    "5000-15000",
+                    "15000-plus",
+                  ][i]
+                }
+                key={label}
+              >
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field full">
+          <label htmlFor="message">{t.message} *</label>
+          <textarea
+            name="message"
+            id="message"
+            placeholder={t.messagePlaceholder}
+            required
+            minLength={20}
+            maxLength={5000}
+            aria-invalid={!!issues.message}
+          />
+          {issues.message && (
+            <span className="field-error">{issues.message}</span>
+          )}
+        </div>
+        <div hidden aria-hidden="true">
+          <label htmlFor="website">Website</label>
+          <input id="website" name="website" tabIndex={-1} autoComplete="off" />
+        </div>
+        <div className="full field">
+          <button disabled={busy} className="btn" type="submit">
+            {busy ? t.sending : t.submit}
+          </button>
+          <p className="form-note">{t.privacy}</p>
+        </div>
+      </div>
+    </form>
+  );
 }

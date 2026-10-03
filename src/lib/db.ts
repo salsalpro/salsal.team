@@ -2,12 +2,17 @@ import Database from "better-sqlite3";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-const globalDb = globalThis as typeof globalThis & { salsalDb?: Database.Database };
+const globalDb = globalThis as typeof globalThis & {
+  salsalDb?: Database.Database;
+};
 
 export function getDb(): Database.Database {
   if (globalDb.salsalDb) return globalDb.salsalDb;
   // The operator supplies the runtime database separately; do not trace its parent directory into a build.
-  const filename = path.resolve(/* turbopackIgnore: true */ process.env.DATABASE_PATH || ".data/salsal.sqlite");
+  const filename = path.resolve(
+    /* turbopackIgnore: true */ process.env.DATABASE_PATH ||
+      ".data/salsal.sqlite",
+  );
   mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
   const db = new Database(filename);
   db.pragma("journal_mode = WAL");
@@ -19,13 +24,24 @@ export function getDb(): Database.Database {
 
 /** Ordered, transactional SQL migrations. Production startup does not silently mutate schema. */
 export function migrateDomain(db = getDb()): void {
-  db.exec("CREATE TABLE IF NOT EXISTS schema_migration (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS schema_migration (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)",
+  );
   const directory = path.join(process.cwd(), "migrations");
-  for (const file of readdirSync(directory).filter((name) => /^\d+.*\.sql$/.test(name)).sort()) {
-    if (db.prepare("SELECT version FROM schema_migration WHERE version = ?").get(file)) continue;
+  for (const file of readdirSync(directory)
+    .filter((name) => /^\d+.*\.sql$/.test(name))
+    .sort()) {
+    if (
+      db
+        .prepare("SELECT version FROM schema_migration WHERE version = ?")
+        .get(file)
+    )
+      continue;
     db.transaction(() => {
       db.exec(readFileSync(path.join(directory, file), "utf8"));
-      db.prepare("INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)").run(file, new Date().toISOString());
+      db.prepare(
+        "INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)",
+      ).run(file, new Date().toISOString());
     })();
   }
 }
