@@ -42,9 +42,9 @@ export function AuthForm({ locale }: { locale: Locale }) {
     }
     setBusy(true);
     try {
-      const result = register
-        ? await authClient.signUp.email({ email, password, name })
-        : await authClient.signIn.email({ email, password });
+      const result : any = register
+        ? await authClient.signUp.email({ email, password, name }) && console.log({email , password , name})
+        : await authClient.signIn.email({ email, password }) && console.log({email , password , name})
       if (result.error) {
         if (result.error.status === 429) {
           setError(t.rateLimit);
