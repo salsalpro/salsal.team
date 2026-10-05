@@ -9,7 +9,7 @@ export async function PATCH(request: Request, context: IdContext) {
     await requireApiUser(request, true);
     const { id } = await context.params;
     const input = leadUpdateSchema.parse(await readJson(request));
-    if (!updateLead(id, input.status, input.notes))
+    if (!(await updateLead(id, input.status, input.notes)))
       throw new ApiError(404, "Lead not found.");
     return Response.json({ ok: true });
   } catch (error) {

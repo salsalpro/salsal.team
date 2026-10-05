@@ -16,7 +16,7 @@ export async function generateMetadata({
 }) {
   const { locale: raw, slug } = await params;
   const locale = getLocale(raw);
-  const service = getVisibleServices(locale).find((s) => s.slug === slug);
+  const service = (await getVisibleServices(locale)).find((s) => s.slug === slug);
   if (!service) notFound();
   return pageMetadata(
     locale,
@@ -34,11 +34,11 @@ export default async function Service({
   const locale = getLocale(raw);
   const d = dictionary(locale);
   const t = d.services;
-  const services = getVisibleServices(locale);
+  const services = (await getVisibleServices(locale));
   const s = services.find((s) => s.slug === slug);
   if (!s) notFound();
   const related = services.filter((x) => x.slug !== slug).slice(0, 3);
-  const projects = listPortfolio()
+  const projects = (await listPortfolio())
     .filter((p) => p.services.includes(slug))
     .slice(0, 3);
   return (

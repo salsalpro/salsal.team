@@ -6,7 +6,7 @@ import { failure, readJson } from "../_utils";
 export async function GET(request: Request) {
   try {
     const user = await requireApiUser(request);
-    return Response.json({ profile: getProfile(user.id) });
+    return Response.json({ profile: (await getProfile(user.id)) });
   } catch (error) {
     return failure(error);
   }
@@ -15,10 +15,10 @@ export async function PATCH(request: Request) {
   try {
     verifyOrigin(request);
     const user = await requireApiUser(request);
-    const profile = updateProfile(
+    const profile = (await updateProfile(
       user.id,
       profileSchema.parse(await readJson(request)),
-    );
+    ));
     return Response.json({ ok: true, profile });
   } catch (error) {
     return failure(error);

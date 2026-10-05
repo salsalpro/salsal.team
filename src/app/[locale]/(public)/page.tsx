@@ -37,8 +37,8 @@ export default async function Home({
   const locale = getLocale((await params).locale);
   const d = dictionary(locale);
   const h = d.home;
-  const projects = listPortfolio().slice(0, 3);
-  const articles = listBlogPosts({ publishedOnly: true, limit: 3 });
+  const projects = (await listPortfolio()).slice(0, 3);
+  const articles = (await listBlogPosts({ publishedOnly: true, limit: 3 }));
   return (
     <>
       <section className="hero">
@@ -103,7 +103,7 @@ export default async function Home({
         />
         <ServiceCards locale={locale} limit={6} />
         <div className="all-services">
-          {getVisibleServices(locale)
+          {(await getVisibleServices(locale))
             .slice(6)
             .map((s) => (
               <Link key={s.slug} href={`/${locale}/services/${s.slug}`}>

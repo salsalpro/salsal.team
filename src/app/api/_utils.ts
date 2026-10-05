@@ -36,7 +36,7 @@ export function failure(error: unknown): Response {
   if (
     error instanceof Error &&
     "code" in error &&
-    String(error.code).startsWith("SQLITE_CONSTRAINT")
+    ["23502", "23503", "23505", "23514"].includes(String(error.code))
   )
     return Response.json(
       {

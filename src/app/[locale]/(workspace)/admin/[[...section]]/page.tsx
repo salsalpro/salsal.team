@@ -93,11 +93,11 @@ export default async function AdminPage({ params, searchParams }: Props) {
   let content;
   switch (path) {
     case "":
-      content = <AdminOverview data={getAdminOverview()} locale={locale} />;
+      content = <AdminOverview data={(await getAdminOverview())} locale={locale} />;
       break;
     case "users": {
       if (id) {
-        const user = getUserDetail(id);
+        const user = (await getUserDetail(id));
         if (!user) notFound();
         content = (
           <UserDetail user={user} locale={locale} serviceTitles={titles} />
@@ -105,7 +105,7 @@ export default async function AdminPage({ params, searchParams }: Props) {
       } else
         content = (
           <UsersView
-            data={listUsers({ search, role, page, pageSize: 12 })}
+            data={(await listUsers({ search, role, page, pageSize: 12 }))}
             search={search}
             role={role}
             locale={locale}
@@ -114,9 +114,9 @@ export default async function AdminPage({ params, searchParams }: Props) {
       break;
     }
     case "leads": {
-      const leads = listLeads({ search, status });
+      const leads = (await listLeads({ search, status }));
       if (id) {
-        const lead = listLeads().find((item) => item.id === id);
+        const lead = (await listLeads()).find((item) => item.id === id);
         if (!lead) notFound();
         content = (
           <>
@@ -196,7 +196,7 @@ export default async function AdminPage({ params, searchParams }: Props) {
             description={t.serviceManagementCopy}
           />
           <Panel>
-            {listServiceSettings().map((setting) => (
+            {(await listServiceSettings()).map((setting) => (
               <ServiceEditor
                 key={setting.slug}
                 setting={setting}
@@ -211,14 +211,14 @@ export default async function AdminPage({ params, searchParams }: Props) {
     case "projects": {
       if (id) {
         const project =
-          id === "new" ? undefined : getProject(id, session.user.id, true);
+          id === "new" ? undefined : (await getProject(id, session.user.id, true));
         if (id !== "new" && !project) notFound();
-        const clients = listUsers({ pageSize: 100 }).users;
+        const clients = (await listUsers({ pageSize: 100 })).users;
         if (
           project &&
           !clients.some((client) => client.id === project.clientId)
         ) {
-          const client = getUserDetail(project.clientId);
+          const client = (await getUserDetail(project.clientId));
           if (client) clients.push(client);
         }
         content = (
@@ -272,7 +272,7 @@ export default async function AdminPage({ params, searchParams }: Props) {
               }
             />
             <Panel>
-              <ProjectsTable projects={listProjects()} locale={locale} />
+              <ProjectsTable projects={(await listProjects())} locale={locale} />
             </Panel>
           </>
         );
@@ -280,7 +280,7 @@ export default async function AdminPage({ params, searchParams }: Props) {
     }
     case "blog": {
       if (id) {
-        const post = id === "new" ? undefined : getBlogPost(id);
+        const post = id === "new" ? undefined : (await getBlogPost(id));
         if (id !== "new" && !post) notFound();
         content = (
           <>
@@ -297,12 +297,12 @@ export default async function AdminPage({ params, searchParams }: Props) {
             </Panel>
           </>
         );
-      } else content = <BlogList posts={listBlogPosts()} locale={locale} />;
+      } else content = <BlogList posts={(await listBlogPosts())} locale={locale} />;
       break;
     }
     case "portfolio": {
       if (id) {
-        const project = id === "new" ? undefined : getPortfolio(id);
+        const project = id === "new" ? undefined : (await getPortfolio(id));
         if (id !== "new" && !project) notFound();
         content = (
           <>
@@ -328,7 +328,7 @@ export default async function AdminPage({ params, searchParams }: Props) {
           </>
         );
       } else
-        content = <PortfolioList projects={listPortfolio()} locale={locale} />;
+        content = <PortfolioList projects={(await listPortfolio())} locale={locale} />;
       break;
     }
     default:

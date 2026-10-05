@@ -8,10 +8,10 @@ export async function PATCH(request: Request, context: IdContext) {
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id } = await context.params;
-    const post = updateBlogPost(
+    const post = (await updateBlogPost(
       id,
       blogUpdateSchema.parse(await readJson(request)),
-    );
+    ));
     if (!post) throw new ApiError(404, "Article not found.");
     return Response.json({ ok: true, post });
   } catch (error) {
@@ -23,7 +23,7 @@ export async function DELETE(request: Request, context: IdContext) {
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id } = await context.params;
-    if (!deleteBlogPost(id)) throw new ApiError(404, "Article not found.");
+    if (!(await deleteBlogPost(id))) throw new ApiError(404, "Article not found.");
     return Response.json({ ok: true });
   } catch (error) {
     return failure(error);

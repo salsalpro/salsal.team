@@ -7,9 +7,9 @@ export async function POST(request: Request) {
   try {
     verifyOrigin(request);
     await requireApiUser(request, true);
-    const project = createPortfolio(
+    const project = (await createPortfolio(
       portfolioSchema.parse(await readJson(request)),
-    );
+    ));
     return Response.json({ ok: true, project }, { status: 201 });
   } catch (error) {
     return failure(error);

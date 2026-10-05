@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "./auth";
-import { getDb } from "./db";
+import { query } from "./db";
 import type { Locale, Role } from "./domain";
 
 export class ApiError extends Error {
@@ -19,9 +19,9 @@ export async function getSession(requestHeaders?: Headers) {
   });
   if (!session) return null;
   // Consult the database for every permission decision, including after a role change.
-  const user = getDb()
-    .prepare('SELECT role FROM "user" WHERE id = ?')
-    .get(session.user.id) as { role: Role } | undefined;
+  const user = (
+    await query('SELECT role FROM "user" WHERE id = $1', [session.user.id])
+  ).rows[0] as { role: Role } | undefined;
   if (!user) return null;
   return { ...session, user: { ...session.user, role: user.role } };
 }

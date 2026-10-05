@@ -25,7 +25,7 @@ export function SectionHeading({
     </div>
   );
 }
-export function ServiceCards({
+export async function ServiceCards({
   locale,
   limit,
 }: {
@@ -33,7 +33,7 @@ export function ServiceCards({
   limit?: number;
 }) {
   const d = dictionary(locale);
-  const services = getVisibleServices(locale);
+  const services = (await getVisibleServices(locale));
   return (
     <div className="service-grid">
       {services.slice(0, limit).map((s, i) => (

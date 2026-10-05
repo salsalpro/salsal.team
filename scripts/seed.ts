@@ -15,7 +15,7 @@ async function main() {
   if (process.env.NODE_ENV === "production")
     throw new Error("Demo seeding is disabled in production.");
   const { auth } = await import("../src/lib/auth");
-  const { getDb } = await import("../src/lib/db");
+  const { query, transaction } = await import("../src/lib/db");
   const { articleSeeds, portfolioSeeds } =
     await import("../src/content/fixtures");
   const {
@@ -29,19 +29,20 @@ async function main() {
     createLead,
   } = await import("../src/lib/repository");
   const { blogSchema, portfolioSchema } = await import("../src/lib/validation");
-  const db = getDb();
   for (const { id, ...post } of articleSeeds)
-    if (!getBlogPost(post.slug) && !getBlogPost(id))
-      createBlogPost(blogSchema.parse(post), true, id);
+    if (!(await getBlogPost(post.slug)) && !(await getBlogPost(id)))
+      await createBlogPost(blogSchema.parse(post), true, id);
   for (const { id, ...project } of portfolioSeeds)
-    if (!getPortfolio(project.slug) && !getPortfolio(id))
-      createPortfolio(portfolioSchema.parse(project), true, id);
+    if (!(await getPortfolio(project.slug)) && !(await getPortfolio(id)))
+      await createPortfolio(portfolioSchema.parse(project), true, id);
   if (process.env.SEED_DEMO_ACCOUNTS === "false") {
     console.log("Public demonstration content seeded. No accounts created.");
     return;
   }
 
-  const credentialPath = path.resolve(".data/demo-credentials.json");
+  const credentialPath = path.resolve(
+    process.env.DEMO_CREDENTIAL_PATH || ".data/demo-credentials.json",
+  );
   type Credential = {
     email: string;
     password: string;
@@ -84,9 +85,9 @@ async function main() {
       password: process.env.DEMO_CLIENT_PASSWORD,
     },
   ]) {
-    const existing = db
-      .prepare('SELECT id,role FROM "user" WHERE email=?')
-      .get(account.email) as { id: string; role: string } | undefined;
+    const existing = (
+      await query('SELECT id,role FROM "user" WHERE email=$1', [account.email])
+    ).rows[0] as { id: string; role: string } | undefined;
     if (existing) {
       if (existing.role !== account.role)
         throw new Error(
@@ -113,10 +114,10 @@ async function main() {
     const result = await auth.api.signUpEmail({
       body: { name: account.name, email: account.email, password },
     });
-    db.prepare('UPDATE "user" SET role=? WHERE id=?').run(
+    await query('UPDATE "user" SET role=$1 WHERE id=$2', [
       account.role,
       result.user.id,
-    );
+    ]);
     accounts.push({
       role: account.role,
       email: account.email,
@@ -127,12 +128,13 @@ async function main() {
   }
   saveCredentials();
   const client = accounts.find((account) => account.role === "USER")!;
-  db.prepare(
-    "INSERT OR IGNORE INTO profile(user_id,company,phone,locale) VALUES (?,?,?,?)",
-  ).run(client.id, "Orbit Studio · Demo", "+98 21 5550 1200", "en");
-  db.transaction(() => {
-    if (!listProjects({ userId: client.id }).length) {
-      const launch = createProject(
+  await query(
+    "INSERT INTO profile(user_id,company,phone,locale) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+    [client.id, "Orbit Studio · Demo", "+98 21 5550 1200", "en"],
+  );
+  await transaction(async () => {
+    if (!(await listProjects({ userId: client.id })).length) {
+      const launch = await createProject(
         {
           clientId: client.id,
           title: {
@@ -179,7 +181,7 @@ async function main() {
         },
         true,
       );
-      createProject(
+      await createProject(
         {
           clientId: client.id,
           title: {
@@ -217,7 +219,7 @@ async function main() {
         },
         true,
       );
-      createDeliverable(
+      await createDeliverable(
         launch.id,
         {
           title: {
@@ -231,74 +233,77 @@ async function main() {
         true,
       );
       const timestamp = new Date().toISOString();
-      db.prepare(
-        "INSERT INTO report(id,user_id,project_id,title,category,period,summary,metrics,created_at,is_demo) VALUES (?,?,?,?,?,?,?,?,?,1)",
-      ).run(
-        randomUUID(),
-        client.id,
-        launch.id,
-        JSON.stringify({
-          en: "Launch readiness review",
-          fa: "گزارش آمادگی انتشار",
-        }),
-        "website",
-        "September 2026",
-        JSON.stringify({
-          en: "A sample project delivery report. The figures describe demo project tasks, not live site traffic.",
-          fa: "نمونه گزارش تحویل پروژه؛ اعداد مربوط به وظایف نمایشی هستند، نه ترافیک واقعی سایت.",
-        }),
-        JSON.stringify([
-          {
-            label: { en: "Milestones completed", fa: "مراحل تکمیل‌شده" },
-            value: "2 / 4",
-          },
-          {
-            label: { en: "Project progress", fa: "پیشرفت پروژه" },
-            value: "68%",
-          },
-        ]),
-        timestamp,
+      await query(
+        "INSERT INTO report(id,user_id,project_id,title,category,period,summary,metrics,created_at,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1)",
+        [
+          randomUUID(),
+          client.id,
+          launch.id,
+          JSON.stringify({
+            en: "Launch readiness review",
+            fa: "گزارش آمادگی انتشار",
+          }),
+          "website",
+          "September 2026",
+          JSON.stringify({
+            en: "A sample project delivery report. The figures describe demo project tasks, not live site traffic.",
+            fa: "نمونه گزارش تحویل پروژه؛ اعداد مربوط به وظایف نمایشی هستند، نه ترافیک واقعی سایت.",
+          }),
+          JSON.stringify([
+            {
+              label: { en: "Milestones completed", fa: "مراحل تکمیل‌شده" },
+              value: "2 / 4",
+            },
+            {
+              label: { en: "Project progress", fa: "پیشرفت پروژه" },
+              value: "68%",
+            },
+          ]),
+          timestamp,
+        ],
       );
-      db.prepare(
-        "INSERT INTO notification(id,user_id,title,message,created_at) VALUES (?,?,?,?,?)",
-      ).run(
-        randomUUID(),
-        client.id,
-        JSON.stringify({
-          en: "Your strategy brief is ready",
-          fa: "خلاصه استراتژی شما آماده است",
-        }),
-        JSON.stringify({
-          en: "Review the demonstration brief in your deliverables.",
-          fa: "خلاصه نمایشی را در فایل‌های تحویلی بررسی کنید.",
-        }),
-        timestamp,
+      await query(
+        "INSERT INTO notification(id,user_id,title,message,created_at) VALUES ($1,$2,$3,$4,$5)",
+        [
+          randomUUID(),
+          client.id,
+          JSON.stringify({
+            en: "Your strategy brief is ready",
+            fa: "خلاصه استراتژی شما آماده است",
+          }),
+          JSON.stringify({
+            en: "Review the demonstration brief in your deliverables.",
+            fa: "خلاصه نمایشی را در فایل‌های تحویلی بررسی کنید.",
+          }),
+          timestamp,
+        ],
       );
       for (const [index, slug] of [
         "digital-marketing",
         "seo",
         "instagram-marketing",
       ].entries()) {
-        db.prepare(
-          "INSERT INTO client_service(id,user_id,service_slug,package,status,start_date,end_date,progress,team,latest_update,is_demo) VALUES (?,?,?,?,?,?,?,?,?,?,1)",
-        ).run(
-          randomUUID(),
-          client.id,
-          slug,
-          JSON.stringify({ en: "Studio partnership", fa: "همکاری استودیو" }),
-          "active",
-          "2026-09-01",
-          "2026-12-01",
-          [68, 42, 90][index],
-          "Salsal Studio",
-          JSON.stringify({
-            en: "Sample work is in progress. Your team will share the next review.",
-            fa: "کار نمونه در حال انجام است. تیم زمان بازبینی بعدی را اعلام می‌کند.",
-          }),
+        await query(
+          "INSERT INTO client_service(id,user_id,service_slug,package,status,start_date,end_date,progress,team,latest_update,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)",
+          [
+            randomUUID(),
+            client.id,
+            slug,
+            JSON.stringify({ en: "Studio partnership", fa: "همکاری استودیو" }),
+            "active",
+            "2026-09-01",
+            "2026-12-01",
+            [68, 42, 90][index],
+            "Salsal Studio",
+            JSON.stringify({
+              en: "Sample work is in progress. Your team will share the next review.",
+              fa: "کار نمونه در حال انجام است. تیم زمان بازبینی بعدی را اعلام می‌کند.",
+            }),
+          ],
         );
       }
     }
-    if (!db.prepare("SELECT id FROM lead LIMIT 1").get()) {
+    if (!(await query("SELECT id FROM lead LIMIT 1", [])).rows[0]) {
       for (const entry of [
         {
           name: "Mina Rahimi (Demo)",
@@ -322,7 +327,7 @@ async function main() {
             "Demonstration consultation: we want to connect our content strategy and campaign measurement.",
         },
       ])
-        createLead({
+        await createLead({
           ...entry,
           email: `${entry.company.split(" ")[0].toLowerCase()}@example.test`,
           phone: "",
@@ -331,12 +336,19 @@ async function main() {
           contactMethod: "email",
         });
     }
-  })();
+  });
   console.log(
     "Development fixtures seeded. Generated credentials are saved privately in .data/demo-credentials.json.",
   );
 }
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main()
+  .catch(() => {
+    console.error(
+      "Database script failed. Check PostgreSQL connection and schema; no credentials were logged.",
+    );
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    const { closeDb } = await import("../src/lib/db");
+    await closeDb();
+  });

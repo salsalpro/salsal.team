@@ -8,10 +8,10 @@ export async function POST(request: Request, context: IdContext) {
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id } = await context.params;
-    if (!getProject(id, undefined, true))
+    if (!(await getProject(id, undefined, true)))
       throw new ApiError(404, "Project not found.");
     const input = deliverableSchema.parse(await readJson(request));
-    const deliverableId = createDeliverable(id, input);
+    const deliverableId = (await createDeliverable(id, input));
     return Response.json({ ok: true, id: deliverableId }, { status: 201 });
   } catch (error) {
     return failure(error);

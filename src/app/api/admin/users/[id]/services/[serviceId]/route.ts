@@ -11,7 +11,7 @@ export async function PATCH(
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id, serviceId } = await context.params;
-    const existing = getClientService(serviceId, id);
+    const existing = (await getClientService(serviceId, id));
     if (!existing) throw new ApiError(404, "Assigned service not found.");
     const input = serviceAssignmentUpdateSchema.parse(await readJson(request));
     if (
@@ -21,7 +21,7 @@ export async function PATCH(
       throw new ApiError(400, "The end date must follow the start date.");
     return Response.json({
       ok: true,
-      service: updateServiceAssignment(serviceId, id, input),
+      service: (await updateServiceAssignment(serviceId, id, input)),
     });
   } catch (error) {
     return failure(error);

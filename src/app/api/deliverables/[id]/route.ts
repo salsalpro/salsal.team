@@ -6,11 +6,11 @@ export async function GET(request: Request, context: IdContext) {
   try {
     const user = await requireApiUser(request);
     const { id } = await context.params;
-    const deliverable = getAuthorizedDeliverable(
+    const deliverable = (await getAuthorizedDeliverable(
       id,
       user.id,
       user.role === "ADMIN",
-    );
+    ));
     if (!deliverable) throw new ApiError(404, "File not found.");
     return new Response(deliverable.content, {
       headers: {

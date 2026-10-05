@@ -5,7 +5,7 @@ import {
   listServiceSettings,
 } from "@/lib/repository";
 export const dynamic = "force-dynamic";
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const paths = [
     "",
@@ -14,11 +14,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/about",
     "/blog",
     "/contact",
-    ...listServiceSettings()
+    ...(await listServiceSettings())
       .filter((s) => s.visible)
       .map((s) => `/services/${s.slug}`),
-    ...listBlogPosts({ publishedOnly: true }).map((p) => `/blog/${p.slug}`),
-    ...listPortfolio().map((p) => `/portfolio/${p.slug}`),
+    ...(await listBlogPosts({ publishedOnly: true })).map((p) => `/blog/${p.slug}`),
+    ...(await listPortfolio()).map((p) => `/portfolio/${p.slug}`),
   ];
   return paths.flatMap((path) =>
     ["en", "fa"].map((locale) => ({

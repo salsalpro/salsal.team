@@ -1,9 +1,12 @@
+import {
+  testDatabase,
+  createTestSchema,
+  dropTestSchema,
+} from "../scripts/test-database";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
-import path from "node:path";
-import { getDb, migrateDomain } from "../src/lib/db";
+import { randomBytes } from "node:crypto";
+import { query, migrateDomain, closeDb } from "../src/lib/db";
 import {
   blogSchema,
   leadSchema,
@@ -29,9 +32,8 @@ import {
   getAdminOverview,
 } from "../src/lib/repository";
 
-const directory = path.join(process.cwd(), "work", `test-${randomUUID()}`);
-mkdirSync(directory, { recursive: true });
-process.env.DATABASE_PATH = path.join(directory, "test.sqlite");
+const database = testDatabase();
+process.env.DATABASE_URL = database.url;
 process.env.BETTER_AUTH_SECRET = randomBytes(32).toString("hex");
 process.env.BETTER_AUTH_URL = "http://localhost:3000";
 
@@ -42,10 +44,11 @@ let adminCookie = "";
 let userCookie = "";
 
 before(async () => {
+  await createTestSchema(database.schema);
   const { auth } = await import("../src/lib/auth");
   const { getMigrations } = await import("better-auth/db/migration");
   await (await getMigrations(auth.options)).runMigrations();
-  migrateDomain();
+  await migrateDomain();
   for (const [index, email] of [
     "owner@example.test",
     "stranger@example.test",
@@ -59,16 +62,16 @@ before(async () => {
     };
     const result = await auth.api.signUpEmail({ body });
     assert.equal(
-      getProfile(result.user.id)?.role,
+      (await getProfile(result.user.id))?.role,
       "USER",
       "a browser-supplied role must never create an administrator",
     );
     if (index === 0) ownerId = result.user.id;
     if (index === 1) strangerId = result.user.id;
     if (index === 2)
-      getDb()
-        .prepare("UPDATE \"user\" SET role='ADMIN' WHERE id=?")
-        .run(result.user.id);
+      await query("UPDATE \"user\" SET role='ADMIN' WHERE id=$1", [
+        result.user.id,
+      ]);
     const response = await auth.api.signInEmail({
       body: { email, password: body.password },
       asResponse: true,
@@ -81,27 +84,30 @@ before(async () => {
     if (index === 2) adminCookie = cookie;
   }
 });
-after(() => {
-  getDb().close();
-  rmSync(directory, { recursive: true, force: true });
+after(async () => {
+  await closeDb();
+  await dropTestSchema(database.schema);
 });
 
-test("migrations are repeatable and tracked", () => {
-  migrateDomain();
+test("migrations are repeatable and tracked", async () => {
+  await migrateDomain();
   assert.equal(
     (
-      getDb()
-        .prepare("SELECT COUNT(*) AS count FROM schema_migration")
-        .get() as { count: number }
+      (
+        await query(
+          "SELECT COUNT(*)::integer AS count FROM schema_migration",
+          [],
+        )
+      ).rows[0] as { count: number }
     ).count,
     1,
   );
 });
 
-test("Better Auth ISO timestamps are represented correctly in profiles and registration analytics", () => {
-  const profile = getProfile(ownerId)!;
+test("Better Auth ISO timestamps are represented correctly in profiles and registration analytics", async () => {
+  const profile = (await getProfile(ownerId))!;
   assert.ok(Math.abs(Date.parse(profile.createdAt) - Date.now()) < 60000);
-  const registrations = getAdminOverview().registrationSeries;
+  const registrations = (await getAdminOverview()).registrationSeries;
   assert.equal(
     registrations.reduce((total, day) => total + day.count, 0),
     3,
@@ -135,8 +141,8 @@ test("lead validation rejects missing contact, invalid service and injected fiel
   );
 });
 
-test("project reads and downloads enforce ownership", () => {
-  const project = createProject(
+test("project reads and downloads enforce ownership", async () => {
+  const project = await createProject(
     projectSchema.parse({
       clientId: ownerId,
       title: localized,
@@ -148,19 +154,19 @@ test("project reads and downloads enforce ownership", () => {
       notes: "Internal staff-only strategy review",
     }),
   );
-  const deliverableId = createDeliverable(project.id, {
+  const deliverableId = await createDeliverable(project.id, {
     title: localized,
     filename: "strategy.txt",
     content: "Private client strategy",
   });
-  assert.equal(getProject(project.id, strangerId), null);
-  assert.equal(getProject(project.id), null);
-  assert.equal(getProject(project.id, ownerId)?.id, project.id);
-  assert.equal(getProject(project.id, undefined, true)?.id, project.id);
-  assert.equal(listProjects({ userId: strangerId }).length, 0);
-  assert.equal(getAuthorizedDeliverable(deliverableId, strangerId), null);
+  assert.equal(await getProject(project.id, strangerId), null);
+  assert.equal(await getProject(project.id), null);
+  assert.equal((await getProject(project.id, ownerId))?.id, project.id);
+  assert.equal((await getProject(project.id, undefined, true))?.id, project.id);
+  assert.equal((await listProjects({ userId: strangerId })).length, 0);
+  assert.equal(await getAuthorizedDeliverable(deliverableId, strangerId), null);
   assert.equal(
-    getAuthorizedDeliverable(deliverableId, ownerId)?.content,
+    (await getAuthorizedDeliverable(deliverableId, ownerId))?.content,
     "Private client strategy",
   );
   assert.equal(
@@ -173,8 +179,8 @@ test("project reads and downloads enforce ownership", () => {
   );
 });
 
-test("draft blog content is excluded from public lookup and listing", () => {
-  const post = createBlogPost(
+test("draft blog content is excluded from public lookup and listing", async () => {
+  const post = await createBlogPost(
     blogSchema.parse({
       slug: "test-article",
       title: localized,
@@ -186,18 +192,21 @@ test("draft blog content is excluded from public lookup and listing", () => {
       seoDescription: localized,
     }),
   );
-  assert.equal(getBlogPost(post.slug, { publishedOnly: true }), null);
-  assert.equal(listBlogPosts({ publishedOnly: true }).length, 0);
-  assert.equal(getBlogPost(post.id)?.published, false);
-  updateBlogPost(post.id, { published: true });
-  assert.equal(getBlogPost(post.slug, { publishedOnly: true })?.id, post.id);
-  updateBlogPost(post.id, { published: false });
-  assert.equal(getBlogPost(post.slug, { publishedOnly: true }), null);
-  assert.equal(listBlogPosts({ publishedOnly: true }).length, 0);
+  assert.equal(await getBlogPost(post.slug, { publishedOnly: true }), null);
+  assert.equal((await listBlogPosts({ publishedOnly: true })).length, 0);
+  assert.equal((await getBlogPost(post.id))?.published, false);
+  await updateBlogPost(post.id, { published: true });
+  assert.equal(
+    (await getBlogPost(post.slug, { publishedOnly: true }))?.id,
+    post.id,
+  );
+  await updateBlogPost(post.id, { published: false });
+  assert.equal(await getBlogPost(post.slug, { publishedOnly: true }), null);
+  assert.equal((await listBlogPosts({ publishedOnly: true })).length, 0);
 });
 
-test("lead workflow and admin counts use persisted application records", () => {
-  const lead = createLead(
+test("lead workflow and admin counts use persisted application records", async () => {
+  const lead = await createLead(
     leadSchema.parse({
       name: "Prospective client",
       email: "hello@example.test",
@@ -205,22 +214,22 @@ test("lead workflow and admin counts use persisted application records", () => {
       message: "We need a considered search strategy for our website.",
     }),
   );
-  updateLead(lead.id, "qualified", "Discovery call complete");
+  await updateLead(lead.id, "qualified", "Discovery call complete");
   assert.equal(
-    listLeads({ status: "qualified" })[0].notes,
+    (await listLeads({ status: "qualified" }))[0].notes,
     "Discovery call complete",
   );
-  assert.equal(getAdminOverview().stats.leads, 1);
+  assert.equal((await getAdminOverview()).stats.leads, 1);
 });
 
-test("rate limit persists counters and denies calls past allowance", () => {
-  assert.equal(consumeRateLimit("test", 2), true);
-  assert.equal(consumeRateLimit("test", 2), true);
-  assert.equal(consumeRateLimit("test", 2), false);
+test("rate limit persists counters and denies calls past allowance", async () => {
+  assert.equal(await consumeRateLimit("test", 2), true);
+  assert.equal(await consumeRateLimit("test", 2), true);
+  assert.equal(await consumeRateLimit("test", 2), false);
 });
 
 test("profile update accepts only the selected account and exposes no password data", async () => {
-  const profile = updateProfile(ownerId, {
+  const profile = await updateProfile(ownerId, {
     name: "Updated owner",
     company: "Example",
     phone: "12345",
@@ -229,7 +238,7 @@ test("profile update accepts only the selected account and exposes no password d
   assert.equal(profile?.name, "Updated owner");
   assert.equal(profile?.role, "USER");
   assert.equal("password" in (profile || {}), false);
-  assert.equal(getProfile(strangerId)?.name, "Test 1");
+  assert.equal((await getProfile(strangerId))?.name, "Test 1");
   const { PATCH } = await import("../src/app/api/profile/route");
   const injection = await PATCH(
     new Request("http://localhost:3000/api/profile", {
@@ -245,8 +254,8 @@ test("profile update accepts only the selected account and exposes no password d
     }),
   );
   assert.equal(injection.status, 400);
-  assert.equal(getProfile(ownerId)?.role, "USER");
-  assert.equal(getProfile(ownerId)?.email, "owner@example.test");
+  assert.equal((await getProfile(ownerId))?.role, "USER");
+  assert.equal((await getProfile(ownerId))?.email, "owner@example.test");
 });
 
 test("admin API independently denies anonymous and regular users", async () => {
@@ -306,7 +315,7 @@ test("project and file HTTP routes return 404 for another user's resources", asy
     .getSetCookie()
     .map((entry) => entry.split(";")[0])
     .join("; ");
-  const project = listProjects({ userId: ownerId })[0];
+  const project = (await listProjects({ userId: ownerId }))[0];
   const { GET: getProjectRoute } =
     await import("../src/app/api/projects/[id]/route");
   const { GET: getFileRoute } =
@@ -373,9 +382,9 @@ test("project and file HTTP routes return 404 for another user's resources", asy
 
 test("an existing session loses admin API access immediately after demotion", async () => {
   const { GET } = await import("../src/app/api/admin/users/route");
-  getDb()
-    .prepare("UPDATE \"user\" SET role='USER' WHERE email=?")
-    .run("admin@example.test");
+  await query("UPDATE \"user\" SET role='USER' WHERE email=$1", [
+    "admin@example.test",
+  ]);
   assert.equal(
     (
       await GET(
@@ -389,9 +398,9 @@ test("an existing session loses admin API access immediately after demotion", as
 });
 
 test("service assignments require admin and stay scoped to the selected customer", async () => {
-  getDb()
-    .prepare("UPDATE \"user\" SET role='ADMIN' WHERE email=?")
-    .run("admin@example.test");
+  await query("UPDATE \"user\" SET role='ADMIN' WHERE email=$1", [
+    "admin@example.test",
+  ]);
   const { POST } =
     await import("../src/app/api/admin/users/[id]/services/route");
   const { PATCH } =

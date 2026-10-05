@@ -7,10 +7,17 @@ async function main() {
   const { migrateDomain } = await import("../src/lib/db");
   const { runMigrations } = await getMigrations(auth.options);
   await runMigrations();
-  migrateDomain();
+  await migrateDomain();
   console.log("Authentication schema and versioned domain migrations applied.");
 }
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main()
+  .catch(() => {
+    console.error(
+      "Database setup failed. Check PostgreSQL connection, privileges, and schema.",
+    );
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    const { closeDb } = await import("../src/lib/db");
+    await closeDb();
+  });

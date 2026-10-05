@@ -6,11 +6,13 @@ English and Persian share one application and one database. Persian uses RTL lay
 
 ## Run locally
 
-Use Node.js **22.13 or newer** and npm. `better-sqlite3` is a native Node dependency; environments without a compatible prebuilt binary need the usual native build tools.
+Use Node.js **22.x**, npm and PostgreSQL. Save a private `DATABASE_URL` for an empty local database. `better-sqlite3` is retained only for one-time data transfer and migration tests; installing development dependencies may require native build tools.
 
 ```bash
 cd ~/Desktop/salsal.team
-npm install
+npm ci
+node scripts/setup-env.mjs
+# Set DATABASE_URL in .env.local before continuing.
 npm run setup
 npm run db:seed   # Optional development content and accounts
 npm run dev
@@ -18,7 +20,7 @@ npm run dev
 
 Open `http://localhost:3000/en` or `http://localhost:3000/fa`. Use `localhost` consistently for authentication because it must match the configured auth origin.
 
-`npm run setup` creates `.data/` with owner-only access (and tightens that directory's permissions if it already exists), generates a random authentication secret in a private `.env.local` when that file does not exist, and applies database migrations. It preserves an existing environment file. No external database account is needed for local use.
+`npm run setup` creates `.data/` with owner-only access (and tightens that directory's permissions if it already exists), generates a random authentication secret in a private `.env.local` when that file does not exist, and applies database migrations. It preserves an existing environment file. A PostgreSQL database must be available before migrations run. Existing SQLite installations must follow [POSTGRESQL_MIGRATION.md](POSTGRESQL_MIGRATION.md) instead of seeding a migration target.
 
 The optional seed inserts three clearly labeled fictional portfolio concepts, three bilingual articles, and demonstration workspace records. Generated account passwords are stored privately in **`.data/demo-credentials.json`**; do not publish or commit that file. The seed does not overwrite existing account passwords. Set `SEED_DEMO_ACCOUNTS=false` before seeding to add public content without creating accounts.
 
@@ -31,7 +33,7 @@ Sign in at `/en/login` or `/fa/login`; the same screen offers registration. The 
 | Application    | Next.js 16.3.8 App Router, React 19.3.0, TypeScript 5.9          |
 | Styling        | Tailwind CSS 4, shared CSS design tokens, Lucide icons           |
 | Authentication | Better Auth 1.7.7, email/password, database sessions             |
-| Persistence    | SQLite through `better-sqlite3`, ordered SQL migrations          |
+| Persistence    | PostgreSQL through `pg`, ordered SQL migrations          |
 | Validation     | Zod 4, strict server-side request schemas                        |
 | Localization   | Typed English/Persian dictionaries and localized content records |
 | Verification   | ESLint 9, TypeScript, Node test runner, Playwright               |
@@ -77,8 +79,8 @@ migrations/              Ordered domain SQL migrations
 scripts/                 Environment setup, migration, seed, and browser-test setup
 tests/                   Backend and browser checks
 public/                  Public static assets
-.data/                   Private local database and generated demo credentials (ignored)
-work/                    Isolated browser-test database and test artifacts (ignored)
+.data/                   Retained SQLite sources/backups and demo credentials (ignored)
+work/                    Private test artifacts and optional local test server (ignored)
 ```
 
 Service editorial content is deliberately maintained in `src/content/services.ts`; the database stores service visibility and ordering. This keeps a small catalog maintainable without introducing a second CMS. Blog and portfolio content live in the database and are read through the same repository used by admin editing. `src/content/fixtures.ts` is seed input, not a separate public content source.
@@ -87,7 +89,7 @@ Localized content uses `{ en, fa }` fields. Interface copy comes from typed dict
 
 ## Database and authorization
 
-The default database is `.data/salsal.sqlite`. SQLite uses WAL mode and foreign keys. Better Auth manages its user, account, session, and verification schema; the application migrations manage leads, projects, milestones, assigned services, reports, notifications, deliverables, content, and service settings. Migration application is explicit:
+The database is selected by the private `DATABASE_URL`. A reused, bounded PostgreSQL pool supplies asynchronous parameterized queries; transactions keep one checked-out connection. Foreign keys and existing constraints remain enforced. Better Auth manages its user, account, session, and verification schema; the application migrations manage leads, projects, milestones, assigned services, reports, notifications, deliverables, content, and service settings. Migration application is explicit:
 
 ```bash
 npm run db:setup
@@ -107,14 +109,16 @@ This creates a new administrator and prints no credentials. It refuses to modify
 
 ## Environment
 
-See `.env.example`. Local setup generates the essential values; deployment must supply the real URLs and secret.
+See `.env.example`. Local setup generates the auth secret and local origins; the operator supplies PostgreSQL URLs. Deployment must supply the real URLs and preserve the existing auth secret when migrating data.
 
 | Variable                                      | Purpose                                                                                                                                                                          |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BETTER_AUTH_SECRET`                          | Random secret, at least 32 characters; keep private and stable across restarts.                                                                                                  |
 | `BETTER_AUTH_URL`                             | Authentication origin, locally `http://localhost:3000`.                                                                                                                          |
 | `NEXT_PUBLIC_SITE_URL`                        | Public canonical origin used in metadata and sitemap.                                                                                                                            |
-| `DATABASE_PATH`                               | Persistent SQLite file path; default `.data/salsal.sqlite`.                                                                                                                      |
+| `DATABASE_URL` | Private PostgreSQL connection URL; required for runtime/setup/build. |
+| `DATABASE_POOL_MAX` | Per-process pool maximum, default 5; size within provider limits. |
+| `TEST_DATABASE_URL` | Dedicated disposable PostgreSQL database for isolated test schemas. |
 | `TRUST_PROXY`                                 | Controls the contact form's IP-based throttle only. Default `false` shares a 30-per-hour bucket. Enable only behind an ingress that replaces client-supplied forwarding headers. |
 | `SEED_DEMO_ACCOUNTS`                          | Set to `false` to seed public content only. Used by the development seed command.                                                                                                |
 | `DEMO_ADMIN_EMAIL`, `DEMO_CLIENT_EMAIL`       | Optional development account email overrides.                                                                                                                                    |
@@ -136,13 +140,13 @@ npm run test:e2e
 
 `npm run format` applies the project’s Prettier formatting.
 
-The browser suite uses the production build on port `3100`, so build first. It requires the seeded database at the default `.data/salsal.sqlite` path and generated `.data/demo-credentials.json`, plus an available Chrome executable. A custom `DATABASE_PATH` is supported by the application, but browser-test preparation currently expects that default source path. Browser checks copy the database to `work/e2e.sqlite`; they do not run mutations against the main development database. `CHROME_PATH` can select a compatible installed browser.
+The browser suite uses the production build on port `3100`, so build first against an initialized database. Export `TEST_DATABASE_URL` privately to a dedicated PostgreSQL test database before running backend/browser tests. Tests create unique schemas, synthetic accounts and fixtures, and remove only their own schemas; they never copy the main SQLite database or use its credentials. Browser fixture credentials are stored privately in ignored `work/e2e-credentials.json`. `CHROME_PATH` can select a compatible installed browser. Interrupted runs may leave a generated test schema; identify it before cleaning it up.
 
 See [VALIDATION.md](VALIDATION.md) for executed checks, browser coverage, results, and deployment boundaries.
 
 ## Deployment and external integrations
 
-For a Node server with persistent local storage:
+For a Node server connected to PostgreSQL:
 
 ```bash
 npm ci
@@ -153,7 +157,7 @@ npm run start
 
 Supply production environment variables before migration/build/start. The npm database command expects `.env.local` to exist; provision it securely from the deployment environment. The server binds to `127.0.0.1`; put an HTTPS reverse proxy in front of it. Configure the public/auth URLs to the same deployment origin.
 
-This SQLite architecture is suited to one Node deployment with a durable writable disk. It is not a static export or an ephemeral/Edge deployment. Back up the database using SQLite’s backup mechanism, protect filesystem access, and apply migrations deliberately before starting a new release. A deployment requiring multiple independent instances needs shared database/storage work first.
+Runtime database operations no longer depend on writable local disk. This remains a Node application, not a static export or Edge database implementation. Use provider-supported pooling/TLS and budget connections across serverless instances. Apply schema explicitly before serving traffic. See [POSTGRESQL_MIGRATION.md](POSTGRESQL_MIGRATION.md) for verified backups, existing-data transfer, write freeze, cutover, rollback, and Vercel considerations. No production deployment was performed by the migration task.
 
 The following are integration boundaries, not connected services:
 

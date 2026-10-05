@@ -36,7 +36,7 @@ import {
   TextLink,
 } from "./primitives";
 
-type Overview = ReturnType<typeof getAdminOverview>;
+type Overview = Awaited<ReturnType<typeof getAdminOverview>>;
 export function AdminOverview({
   data,
   locale,
@@ -312,7 +312,7 @@ export function UsersView({
   search,
   role,
 }: {
-  data: ReturnType<typeof listUsers>;
+  data: Awaited<ReturnType<typeof listUsers>>;
   locale: Locale;
   search: string;
   role: string;

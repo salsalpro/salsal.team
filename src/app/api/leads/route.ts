@@ -15,14 +15,14 @@ export async function POST(request: Request) {
           "unknown"
         : "local";
     if (
-      !consumeRateLimit(
+      !(await consumeRateLimit(
         `lead-contact:${input.email.toLowerCase() || input.phone}`,
         5,
-      ) ||
-      !consumeRateLimit(`lead-ip:${ip}`, 30)
+      )) ||
+      !(await consumeRateLimit(`lead-ip:${ip}`, 30))
     )
       throw new ApiError(429, "Too many requests. Please try again later.");
-    const lead = createLead(input);
+    const lead = (await createLead(input));
     return Response.json({ ok: true, id: lead.id }, { status: 201 });
   } catch (error) {
     return failure(error);

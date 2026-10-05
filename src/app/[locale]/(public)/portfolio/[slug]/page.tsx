@@ -14,7 +14,7 @@ export async function generateMetadata({
 }) {
   const { locale: raw, slug } = await params;
   const locale = getLocale(raw);
-  const p = getPortfolio(slug);
+  const p = (await getPortfolio(slug));
   if (!p) notFound();
   return pageMetadata(
     locale,
@@ -32,9 +32,9 @@ export default async function Project({
   const locale = getLocale(raw);
   const d = dictionary(locale);
   const t = d.portfolio;
-  const p = getPortfolio(slug);
+  const p = (await getPortfolio(slug));
   if (!p) notFound();
-  const index = listPortfolio().findIndex((x) => x.id === p.id);
+  const index = (await listPortfolio()).findIndex((x) => x.id === p.id);
   return (
     <div className="container">
       <div className="page-hero">

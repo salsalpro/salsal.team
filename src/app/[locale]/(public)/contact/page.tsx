@@ -26,7 +26,7 @@ export default async function Contact({
   const locale = getLocale((await params).locale);
   const t = dictionary(locale).contact;
   const query = await searchParams;
-  const services = getVisibleServices(locale).map(({ slug, name }) => ({
+  const services = (await getVisibleServices(locale)).map(({ slug, name }) => ({
     slug,
     name,
   }));

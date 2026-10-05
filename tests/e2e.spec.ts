@@ -1,6 +1,6 @@
 import { test as base, expect, type Page } from "@playwright/test";
 import { readFileSync, mkdirSync } from "node:fs";
-import Database from "better-sqlite3";
+import { query, closeDb } from "../src/lib/db";
 const test = base.extend<{ runtimeErrors: string[] }>({
   runtimeErrors: [
     async ({ page }, use) => {
@@ -19,14 +19,22 @@ const test = base.extend<{ runtimeErrors: string[] }>({
     { auto: true },
   ],
 });
-const accounts: {
+type TestAccount = {
   email: string;
   password: string;
   role: string;
   id: string;
-}[] = JSON.parse(readFileSync(".data/demo-credentials.json", "utf8")).accounts;
-const admin = accounts.find((a) => a.role === "ADMIN")!;
-const client = accounts.find((a) => a.role === "USER")!;
+};
+let admin: TestAccount;
+let client: TestAccount;
+test.beforeAll(() => {
+  const accounts: TestAccount[] = JSON.parse(
+    readFileSync("work/e2e-credentials.json", "utf8"),
+  ).accounts;
+  admin = accounts.find((account) => account.role === "ADMIN")!;
+  client = accounts.find((account) => account.role === "USER")!;
+});
+test.afterAll(closeDb);
 const slugs = [
   "digital-marketing",
   "instagram-marketing",
@@ -229,14 +237,17 @@ test("signup, empty account, server role enforcement and cross-account isolation
   await page.goto("/en/admin");
   await expect(page).toHaveURL("/en/dashboard");
   expect((await page.request.get("/api/admin/users")).status()).toBe(403);
-  const db = new Database("work/e2e.sqlite", { readonly: true });
-  const project = db
-    .prepare("SELECT id FROM project WHERE client_id=? LIMIT 1")
-    .get(client.id) as { id: string };
-  const file = db
-    .prepare("SELECT id FROM deliverable WHERE project_id=? LIMIT 1")
-    .get(project.id) as { id: string };
-  db.close();
+  const project = (
+    await query(
+      "SELECT p.id FROM project p JOIN deliverable d ON d.project_id=p.id WHERE p.client_id=$1 ORDER BY p.id LIMIT 1",
+      [client.id],
+    )
+  ).rows[0] as { id: string };
+  const file = (
+    await query("SELECT id FROM deliverable WHERE project_id=$1 LIMIT 1", [
+      project.id,
+    ])
+  ).rows[0] as { id: string };
   expect((await page.request.get(`/api/projects/${project.id}`)).status()).toBe(
     404,
   );
@@ -523,11 +534,12 @@ test("admin assignments, deliverable creation and portfolio edits reach the righ
   await expect(
     page.getByText("Browser production package", { exact: true }),
   ).toBeVisible();
-  const db = new Database("work/e2e.sqlite", { readonly: true });
-  const project = db
-    .prepare("SELECT id FROM project WHERE client_id=? AND is_demo=1 LIMIT 1")
-    .get(client.id) as { id: string };
-  db.close();
+  const project = (
+    await query(
+      "SELECT id FROM project WHERE client_id=$1 AND is_demo=1 LIMIT 1",
+      [client.id],
+    )
+  ).rows[0] as { id: string };
   await page.goto(`/en/admin/projects/${project.id}`);
   const delivery = page
     .locator("form")

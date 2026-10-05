@@ -8,10 +8,10 @@ export async function PATCH(request: Request, context: IdContext) {
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id } = await context.params;
-    const project = updateProject(
+    const project = (await updateProject(
       id,
       projectUpdateSchema.parse(await readJson(request)),
-    );
+    ));
     if (!project) throw new ApiError(404, "Project not found.");
     return Response.json({ ok: true, project });
   } catch (error) {

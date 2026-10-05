@@ -13,7 +13,7 @@ export async function generateMetadata({
 }) {
   const { locale: raw, slug } = await params;
   const locale = getLocale(raw);
-  const p = getBlogPost(slug, { publishedOnly: true });
+  const p = (await getBlogPost(slug, { publishedOnly: true }));
   if (!p) notFound();
   return {
     ...pageMetadata(
@@ -38,7 +38,7 @@ export default async function Article({
   const { locale: raw, slug } = await params;
   const locale = getLocale(raw);
   const d = dictionary(locale);
-  const p = getBlogPost(slug, { publishedOnly: true });
+  const p = (await getBlogPost(slug, { publishedOnly: true }));
   if (!p) notFound();
   const structured = {
     "@context": "https://schema.org",
@@ -102,7 +102,7 @@ export default async function Article({
         <h2 style={{ marginBottom: 32 }}>{d.blog.related}</h2>
         <ArticleCards
           locale={locale}
-          articles={listBlogPosts({ publishedOnly: true })
+          articles={(await listBlogPosts({ publishedOnly: true }))
             .filter((x) => x.id !== p.id)
             .slice(0, 3)}
         />

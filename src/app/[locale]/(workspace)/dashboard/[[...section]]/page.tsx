@@ -42,7 +42,7 @@ export default async function DashboardPage({ params }: Props) {
   const path = section[0] ?? "";
   if (section.length > 2 || (section.length === 2 && path !== "projects"))
     notFound();
-  const data = getDashboardData(session.user.id);
+  const data = (await getDashboardData(session.user.id));
   const titles = Object.fromEntries(
     getServices(locale).map((service) => [service.slug, service.name]),
   );
@@ -62,7 +62,7 @@ export default async function DashboardPage({ params }: Props) {
       break;
     case "projects": {
       if (section[1]) {
-        const project = getProject(section[1], session.user.id);
+        const project = (await getProject(section[1], session.user.id));
         if (!project) notFound();
         content = <CustomerProjectDetail project={project} locale={locale} />;
       } else
@@ -92,7 +92,7 @@ export default async function DashboardPage({ params }: Props) {
       );
       break;
     case "profile": {
-      const profile = getProfile(session.user.id);
+      const profile = (await getProfile(session.user.id));
       if (!profile) notFound();
       content = (
         <>

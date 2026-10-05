@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { getDb } from "./db";
+import { query, transaction } from "./db";
 import type {
   BlogPost,
   ClientService,
@@ -29,15 +29,13 @@ const s = (value: unknown) => String(value ?? "");
 const json = <T>(value: unknown): T => JSON.parse(s(value)) as T;
 const now = () => new Date().toISOString();
 const date = (value: unknown) =>
-  typeof value === "number" ? new Date(value).toISOString() : s(value);
-const count = (sql: string, ...parameters: unknown[]) =>
-  Number(
-    (
-      getDb()
-        .prepare(sql)
-        .get(...parameters) as Row
-    )?.count || 0,
-  );
+  value instanceof Date
+    ? value.toISOString()
+    : typeof value === "number"
+      ? new Date(value).toISOString()
+      : s(value);
+const count = async (sql: string, ...parameters: unknown[]) =>
+  Number(((await query(sql, [...parameters])).rows[0] as Row)?.count || 0);
 
 function mapLead(row: Row): Lead {
   return {
@@ -81,7 +79,7 @@ function mapDeliverable(row: Row): Deliverable {
     isDemo: Boolean(row.is_demo),
   };
 }
-function mapProject(row: Row): Project {
+async function mapProject(row: Row): Promise<Project> {
   return {
     id: s(row.id),
     clientId: s(row.client_id),
@@ -97,11 +95,12 @@ function mapProject(row: Row): Project {
     notes: s(row.notes),
     milestones: json<Milestone[]>(row.milestones),
     deliverables: (
-      getDb()
-        .prepare(
-          "SELECT id,project_id,title,filename,mime_type,size,created_at,is_demo FROM deliverable WHERE project_id=? ORDER BY created_at DESC",
+      (
+        await query(
+          "SELECT id,project_id,title,filename,mime_type,size,created_at,is_demo FROM deliverable WHERE project_id=$1 ORDER BY created_at DESC",
+          [row.id],
         )
-        .all(row.id) as Row[]
+      ).rows as Row[]
     ).map(mapDeliverable),
     createdAt: s(row.created_at),
     updatedAt: s(row.updated_at),
@@ -161,13 +160,11 @@ function mapPortfolio(row: Row): PortfolioProject {
   };
 }
 
-export function createLead(input: LeadInput): Lead {
+export async function createLead(input: LeadInput): Promise<Lead> {
   const id = randomUUID();
-  getDb()
-    .prepare(
-      "INSERT INTO lead(id,name,email,phone,company,service,budget,message,preferred_language,contact_method,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-    )
-    .run(
+  await query(
+    "INSERT INTO lead(id,name,email,phone,company,service,budget,message,preferred_language,contact_method,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+    [
       id,
       input.name,
       input.email,
@@ -179,45 +176,53 @@ export function createLead(input: LeadInput): Lead {
       input.preferredLanguage,
       input.contactMethod,
       now(),
-    );
+    ],
+  );
   return mapLead(
-    getDb().prepare("SELECT * FROM lead WHERE id=?").get(id) as Row,
+    (await query("SELECT * FROM lead WHERE id=$1", [id])).rows[0] as Row,
   );
 }
-export function listLeads(
+export async function listLeads(
   options: { status?: string; search?: string } = {},
-): Lead[] {
+): Promise<Lead[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (options.status) {
-    where.push("status=?");
+    where.push(`status=$${params.length + 1}`);
     params.push(options.status);
   }
   if (options.search) {
-    where.push("(name LIKE ? OR email LIKE ? OR company LIKE ?)");
+    where.push(
+      `(name ILIKE $${params.length + 1} OR email ILIKE $${params.length + 2} OR company ILIKE $${params.length + 3})`,
+    );
     params.push(...Array(3).fill(`%${options.search}%`));
   }
   return (
-    getDb()
-      .prepare(
+    (
+      await query(
         `SELECT * FROM lead ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC LIMIT 500`,
+        [...params],
       )
-      .all(...params) as Row[]
+    ).rows as Row[]
   ).map(mapLead);
 }
-export function updateLead(
+export async function updateLead(
   id: string,
   status: Lead["status"],
   notes: string,
-): boolean {
+): Promise<boolean> {
   return (
-    getDb()
-      .prepare("UPDATE lead SET status=?,notes=? WHERE id=?")
-      .run(status, notes, id).changes > 0
+    (
+      await query("UPDATE lead SET status=$1,notes=$2 WHERE id=$3", [
+        status,
+        notes,
+        id,
+      ])
+    ).rowCount! > 0
   );
 }
 
-export function listUsers(
+export async function listUsers(
   options: {
     search?: string;
     role?: string;
@@ -234,104 +239,114 @@ export function listUsers(
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (options.search) {
-    clauses.push("(u.name LIKE ? OR u.email LIKE ?)");
+    clauses.push(
+      `(u.name ILIKE $${params.length + 1} OR u.email ILIKE $${params.length + 2})`,
+    );
     params.push(`%${options.search}%`, `%${options.search}%`);
   }
   if (options.role) {
-    clauses.push("u.role=?");
+    clauses.push(`u.role=$${params.length + 1}`);
     params.push(options.role);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const total = count(
+  const total = await count(
     `SELECT COUNT(*) AS count FROM "user" u ${where}`,
     ...params,
   );
   const users = (
-    getDb()
-      .prepare(
-        `SELECT u.id,u.name,u.email,u.role,u.createdAt,u.emailVerified,p.company,p.phone,p.locale FROM "user" u LEFT JOIN profile p ON u.id=p.user_id ${where} ORDER BY u.createdAt DESC LIMIT ? OFFSET ?`,
+    (
+      await query(
+        `SELECT u.id,u.name,u.email,u.role,u."createdAt",u."emailVerified",p.company,p.phone,p.locale FROM "user" u LEFT JOIN profile p ON u.id=p.user_id ${where} ORDER BY u."createdAt" DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, pageSize, (page - 1) * pageSize],
       )
-      .all(...params, pageSize, (page - 1) * pageSize) as Row[]
+    ).rows as Row[]
   ).map(mapUser);
   return { users, total, page, pageSize };
 }
-export function getProfile(id: string): UserSummary | null {
-  const row = getDb()
-    .prepare(
-      'SELECT u.id,u.name,u.email,u.role,u.createdAt,u.emailVerified,p.company,p.phone,p.locale FROM "user" u LEFT JOIN profile p ON u.id=p.user_id WHERE u.id=?',
+export async function getProfile(id: string): Promise<UserSummary | null> {
+  const row = (
+    await query(
+      'SELECT u.id,u.name,u.email,u.role,u."createdAt",u."emailVerified",p.company,p.phone,p.locale FROM "user" u LEFT JOIN profile p ON u.id=p.user_id WHERE u.id=$1',
+      [id],
     )
-    .get(id) as Row | undefined;
+  ).rows[0] as Row | undefined;
   return row ? mapUser(row) : null;
 }
-export function updateProfile(
+export async function updateProfile(
   id: string,
   input: { name: string; company: string; phone: string; locale: string },
 ) {
-  getDb().transaction(() => {
-    getDb()
-      .prepare('UPDATE "user" SET name=?,updatedAt=? WHERE id=?')
-      .run(input.name, now(), id);
-    getDb()
-      .prepare(
-        "INSERT INTO profile(user_id,company,phone,locale) VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET company=excluded.company,phone=excluded.phone,locale=excluded.locale",
-      )
-      .run(id, input.company, input.phone, input.locale);
-  })();
-  return getProfile(id);
+  await transaction(async () => {
+    await query('UPDATE "user" SET name=$1,"updatedAt"=$2 WHERE id=$3', [
+      input.name,
+      now(),
+      id,
+    ]);
+    await query(
+      "INSERT INTO profile(user_id,company,phone,locale) VALUES ($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET company=excluded.company,phone=excluded.phone,locale=excluded.locale",
+      [id, input.company, input.phone, input.locale],
+    );
+  });
+  return await getProfile(id);
 }
-export function getUserDetail(id: string) {
-  const profile = getProfile(id);
+export async function getUserDetail(id: string) {
+  const profile = await getProfile(id);
   return profile
     ? {
         ...profile,
-        projects: listProjects({ userId: id }),
-        services: listClientServices(id),
+        projects: await listProjects({ userId: id }),
+        services: await listClientServices(id),
       }
     : null;
 }
-export function listProjects(
+export async function listProjects(
   options: { userId?: string; status?: string } = {},
-): Project[] {
+): Promise<Project[]> {
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (options.userId) {
-    clauses.push("p.client_id=?");
+    clauses.push(`p.client_id=$${params.length + 1}`);
     params.push(options.userId);
   }
   if (options.status) {
-    clauses.push("p.status=?");
+    clauses.push(`p.status=$${params.length + 1}`);
     params.push(options.status);
   }
-  return (
-    getDb()
-      .prepare(
-        `SELECT p.*,u.name AS client_name FROM project p JOIN "user" u ON p.client_id=u.id ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY p.updated_at DESC LIMIT 500`,
-      )
-      .all(...params) as Row[]
-  ).map(mapProject);
+  return Promise.all(
+    (
+      (
+        await query(
+          `SELECT p.*,u.name AS client_name FROM project p JOIN "user" u ON p.client_id=u.id ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY p.updated_at DESC LIMIT 500`,
+          [...params],
+        )
+      ).rows as Row[]
+    ).map(mapProject),
+  );
 }
 /** Callers must supply the authenticated user's id. Admin access is explicitly selected server-side. */
-export function getProject(
+export async function getProject(
   id: string,
   userId?: string,
   isAdmin = false,
-): Project | null {
+): Promise<Project | null> {
   if (!isAdmin && !userId) return null;
-  const row = getDb()
-    .prepare(
-      `SELECT p.*,u.name AS client_name FROM project p JOIN "user" u ON p.client_id=u.id WHERE p.id=? ${isAdmin ? "" : "AND p.client_id=?"}`,
+  const row = (
+    await query(
+      `SELECT p.*,u.name AS client_name FROM project p JOIN "user" u ON p.client_id=u.id WHERE p.id=$1 ${isAdmin ? "" : "AND p.client_id=$2"}`,
+      [...(isAdmin ? [id] : [id, userId])],
     )
-    .get(...(isAdmin ? [id] : [id, userId])) as Row | undefined;
-  return row ? mapProject(row) : null;
+  ).rows[0] as Row | undefined;
+  return row ? await mapProject(row) : null;
 }
-export function createProject(input: ProjectInput, isDemo = false): Project {
+export async function createProject(
+  input: ProjectInput,
+  isDemo = false,
+): Promise<Project> {
   const id = randomUUID();
   const timestamp = now();
-  getDb()
-    .prepare(
-      "INSERT INTO project(id,client_id,title,description,service_ids,status,progress,stage,start_date,deadline,notes,milestones,created_at,updated_at,is_demo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    )
-    .run(
+  await query(
+    "INSERT INTO project(id,client_id,title,description,service_ids,status,progress,stage,start_date,deadline,notes,milestones,created_at,updated_at,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+    [
       id,
       input.clientId,
       JSON.stringify(input.title),
@@ -347,21 +362,20 @@ export function createProject(input: ProjectInput, isDemo = false): Project {
       timestamp,
       timestamp,
       Number(isDemo),
-    );
-  return getProject(id, undefined, true)!;
+    ],
+  );
+  return (await getProject(id, undefined, true))!;
 }
-export function updateProject(
+export async function updateProject(
   id: string,
   input: Partial<ProjectInput>,
-): Project | null {
-  const existing = getProject(id, undefined, true);
+): Promise<Project | null> {
+  const existing = await getProject(id, undefined, true);
   if (!existing) return null;
   const value = { ...existing, ...input };
-  getDb()
-    .prepare(
-      "UPDATE project SET client_id=?,title=?,description=?,service_ids=?,status=?,progress=?,stage=?,start_date=?,deadline=?,notes=?,milestones=?,updated_at=? WHERE id=?",
-    )
-    .run(
+  await query(
+    "UPDATE project SET client_id=$1,title=$2,description=$3,service_ids=$4,status=$5,progress=$6,stage=$7,start_date=$8,deadline=$9,notes=$10,milestones=$11,updated_at=$12 WHERE id=$13",
+    [
       value.clientId,
       JSON.stringify(value.title),
       JSON.stringify(value.description),
@@ -375,37 +389,42 @@ export function updateProject(
       JSON.stringify(value.milestones),
       now(),
       id,
-    );
-  return getProject(id, undefined, true);
+    ],
+  );
+  return await getProject(id, undefined, true);
 }
-export function listClientServices(userId: string): ClientService[] {
+export async function listClientServices(
+  userId: string,
+): Promise<ClientService[]> {
   return (
-    getDb()
-      .prepare(
-        "SELECT * FROM client_service WHERE user_id=? ORDER BY start_date DESC",
+    (
+      await query(
+        "SELECT * FROM client_service WHERE user_id=$1 ORDER BY start_date DESC",
+        [userId],
       )
-      .all(userId) as Row[]
+    ).rows as Row[]
   ).map(mapService);
 }
-export function getClientService(
+export async function getClientService(
   id: string,
   userId: string,
-): ClientService | null {
-  const row = getDb()
-    .prepare("SELECT * FROM client_service WHERE id=? AND user_id=?")
-    .get(id, userId) as Row | undefined;
+): Promise<ClientService | null> {
+  const row = (
+    await query("SELECT * FROM client_service WHERE id=$1 AND user_id=$2", [
+      id,
+      userId,
+    ])
+  ).rows[0] as Row | undefined;
   return row ? mapService(row) : null;
 }
-export function createServiceAssignment(
+export async function createServiceAssignment(
   userId: string,
   input: ServiceAssignmentInput,
-): ClientService {
+): Promise<ClientService> {
   const id = randomUUID();
-  getDb()
-    .prepare(
-      "INSERT INTO client_service(id,user_id,service_slug,package,status,start_date,end_date,progress,team,latest_update) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    )
-    .run(
+  await query(
+    "INSERT INTO client_service(id,user_id,service_slug,package,status,start_date,end_date,progress,team,latest_update) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    [
       id,
       userId,
       input.serviceSlug,
@@ -416,22 +435,21 @@ export function createServiceAssignment(
       input.progress,
       input.team,
       JSON.stringify(input.latestUpdate),
-    );
-  return getClientService(id, userId)!;
+    ],
+  );
+  return (await getClientService(id, userId))!;
 }
-export function updateServiceAssignment(
+export async function updateServiceAssignment(
   id: string,
   userId: string,
   input: Partial<ServiceAssignmentInput>,
-): ClientService | null {
-  const existing = getClientService(id, userId);
+): Promise<ClientService | null> {
+  const existing = await getClientService(id, userId);
   if (!existing) return null;
   const value = { ...existing, ...input };
-  getDb()
-    .prepare(
-      "UPDATE client_service SET service_slug=?,package=?,status=?,start_date=?,end_date=?,progress=?,team=?,latest_update=? WHERE id=? AND user_id=?",
-    )
-    .run(
+  await query(
+    "UPDATE client_service SET service_slug=$1,package=$2,status=$3,start_date=$4,end_date=$5,progress=$6,team=$7,latest_update=$8 WHERE id=$9 AND user_id=$10",
+    [
       value.serviceSlug,
       JSON.stringify(value.package),
       value.status,
@@ -442,16 +460,20 @@ export function updateServiceAssignment(
       JSON.stringify(value.latestUpdate),
       id,
       userId,
-    );
-  return getClientService(id, userId);
+    ],
+  );
+  return await getClientService(id, userId);
 }
-export function getDashboardData(userId: string) {
-  const projects = listProjects({ userId });
-  const services = listClientServices(userId);
+export async function getDashboardData(userId: string) {
+  const projects = await listProjects({ userId });
+  const services = await listClientServices(userId);
   const reports: Report[] = (
-    getDb()
-      .prepare("SELECT * FROM report WHERE user_id=? ORDER BY created_at DESC")
-      .all(userId) as Row[]
+    (
+      await query(
+        "SELECT * FROM report WHERE user_id=$1 ORDER BY created_at DESC",
+        [userId],
+      )
+    ).rows as Row[]
   ).map((row) => ({
     id: s(row.id),
     userId: s(row.user_id),
@@ -465,11 +487,12 @@ export function getDashboardData(userId: string) {
     isDemo: Boolean(row.is_demo),
   }));
   const notifications: Notification[] = (
-    getDb()
-      .prepare(
-        "SELECT * FROM notification WHERE user_id=? ORDER BY created_at DESC LIMIT 20",
+    (
+      await query(
+        "SELECT * FROM notification WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20",
+        [userId],
       )
-      .all(userId) as Row[]
+    ).rows as Row[]
   ).map((row) => ({
     id: s(row.id),
     userId: s(row.user_id),
@@ -502,17 +525,15 @@ export function getDashboardData(userId: string) {
     },
   };
 }
-export function createDeliverable(
+export async function createDeliverable(
   projectId: string,
   input: { title: Localized; filename: string; content: string },
   isDemo = false,
-): string {
+): Promise<string> {
   const id = randomUUID();
-  getDb()
-    .prepare(
-      "INSERT INTO deliverable(id,project_id,title,filename,mime_type,content,size,created_at,is_demo) VALUES (?,?,?,?,?,?,?,?,?)",
-    )
-    .run(
+  await query(
+    "INSERT INTO deliverable(id,project_id,title,filename,mime_type,content,size,created_at,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    [
       id,
       projectId,
       JSON.stringify(input.title),
@@ -522,64 +543,68 @@ export function createDeliverable(
       Buffer.byteLength(input.content),
       now(),
       Number(isDemo),
-    );
+    ],
+  );
   return id;
 }
-export function getAuthorizedDeliverable(
+export async function getAuthorizedDeliverable(
   id: string,
   userId: string,
   isAdmin = false,
 ) {
-  const row = getDb()
-    .prepare(
-      `SELECT d.* FROM deliverable d JOIN project p ON d.project_id=p.id WHERE d.id=? ${isAdmin ? "" : "AND p.client_id=?"}`,
+  const row = (
+    await query(
+      `SELECT d.* FROM deliverable d JOIN project p ON d.project_id=p.id WHERE d.id=$1 ${isAdmin ? "" : "AND p.client_id=$2"}`,
+      [...(isAdmin ? [id] : [id, userId])],
     )
-    .get(...(isAdmin ? [id] : [id, userId])) as Row | undefined;
+  ).rows[0] as Row | undefined;
   return row ? { ...mapDeliverable(row), content: s(row.content) } : null;
 }
 
-export function listBlogPosts(
+export async function listBlogPosts(
   options: { publishedOnly?: boolean; limit?: number; search?: string } = {},
-): BlogPost[] {
+): Promise<BlogPost[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (options.publishedOnly) where.push("published=1");
   if (options.search) {
-    where.push("(title LIKE ? OR excerpt LIKE ?)");
+    where.push(
+      `(title ILIKE $${params.length + 1} OR excerpt ILIKE $${params.length + 2})`,
+    );
     params.push(`%${options.search}%`, `%${options.search}%`);
   }
   params.push(Math.min(500, Math.max(1, options.limit || 100)));
   return (
-    getDb()
-      .prepare(
-        `SELECT * FROM blog_post ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY COALESCE(published_at,created_at) DESC LIMIT ?`,
+    (
+      await query(
+        `SELECT * FROM blog_post ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY COALESCE(published_at,created_at) DESC LIMIT $${params.length}`,
+        [...params],
       )
-      .all(...params) as Row[]
+    ).rows as Row[]
   ).map(mapBlog);
 }
-export function getBlogPost(
+export async function getBlogPost(
   slugOrId: string,
   options: { publishedOnly?: boolean } = {},
-): BlogPost | null {
-  const row = getDb()
-    .prepare(
-      `SELECT * FROM blog_post WHERE (slug=? OR id=?) ${options.publishedOnly ? "AND published=1" : ""}`,
+): Promise<BlogPost | null> {
+  const row = (
+    await query(
+      `SELECT * FROM blog_post WHERE (slug=$1 OR id=$2) ${options.publishedOnly ? "AND published=1" : ""}`,
+      [slugOrId, slugOrId],
     )
-    .get(slugOrId, slugOrId) as Row | undefined;
+  ).rows[0] as Row | undefined;
   return row ? mapBlog(row) : null;
 }
-export function createBlogPost(
+export async function createBlogPost(
   input: BlogInput,
   isDemo = false,
   fixedId?: string,
-): BlogPost {
+): Promise<BlogPost> {
   const id = fixedId || randomUUID();
   const timestamp = now();
-  getDb()
-    .prepare(
-      "INSERT INTO blog_post(id,slug,title,excerpt,content,category,author,cover,published,published_at,seo_title,seo_description,created_at,updated_at,is_demo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    )
-    .run(
+  await query(
+    "INSERT INTO blog_post(id,slug,title,excerpt,content,category,author,cover,published,published_at,seo_title,seo_description,created_at,updated_at,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+    [
       id,
       input.slug,
       JSON.stringify(input.title),
@@ -595,22 +620,21 @@ export function createBlogPost(
       timestamp,
       timestamp,
       Number(isDemo),
-    );
-  return getBlogPost(id)!;
+    ],
+  );
+  return (await getBlogPost(id))!;
 }
-export function updateBlogPost(
+export async function updateBlogPost(
   id: string,
   input: Partial<BlogInput>,
-): BlogPost | null {
-  const existing = getBlogPost(id);
+): Promise<BlogPost | null> {
+  const existing = await getBlogPost(id);
   if (!existing) return null;
   const value = { ...existing, ...input };
   const publishedAt = value.published ? existing.publishedAt || now() : null;
-  getDb()
-    .prepare(
-      "UPDATE blog_post SET slug=?,title=?,excerpt=?,content=?,category=?,author=?,cover=?,published=?,published_at=?,seo_title=?,seo_description=?,updated_at=? WHERE id=?",
-    )
-    .run(
+  await query(
+    "UPDATE blog_post SET slug=$1,title=$2,excerpt=$3,content=$4,category=$5,author=$6,cover=$7,published=$8,published_at=$9,seo_title=$10,seo_description=$11,updated_at=$12 WHERE id=$13",
+    [
       value.slug,
       JSON.stringify(value.title),
       JSON.stringify(value.excerpt),
@@ -624,36 +648,36 @@ export function updateBlogPost(
       JSON.stringify(value.seoDescription),
       now(),
       id,
-    );
-  return getBlogPost(id);
-}
-export function deleteBlogPost(id: string) {
-  return (
-    getDb().prepare("DELETE FROM blog_post WHERE id=?").run(id).changes > 0
+    ],
   );
+  return await getBlogPost(id);
 }
-export function listPortfolio(): PortfolioProject[] {
+export async function deleteBlogPost(id: string) {
+  return (await query("DELETE FROM blog_post WHERE id=$1", [id])).rowCount! > 0;
+}
+export async function listPortfolio(): Promise<PortfolioProject[]> {
   return (
-    getDb().prepare("SELECT * FROM portfolio ORDER BY date DESC").all() as Row[]
+    (await query("SELECT * FROM portfolio ORDER BY date DESC", []))
+      .rows as Row[]
   ).map(mapPortfolio);
 }
-export function getPortfolio(slug: string): PortfolioProject | null {
-  const row = getDb()
-    .prepare("SELECT * FROM portfolio WHERE slug=? OR id=?")
-    .get(slug, slug) as Row | undefined;
+export async function getPortfolio(
+  slug: string,
+): Promise<PortfolioProject | null> {
+  const row = (
+    await query("SELECT * FROM portfolio WHERE slug=$1 OR id=$2", [slug, slug])
+  ).rows[0] as Row | undefined;
   return row ? mapPortfolio(row) : null;
 }
-export function createPortfolio(
+export async function createPortfolio(
   input: PortfolioInput,
   isDemo = false,
   fixedId?: string,
-): PortfolioProject {
+): Promise<PortfolioProject> {
   const id = fixedId || randomUUID();
-  getDb()
-    .prepare(
-      "INSERT INTO portfolio(id,slug,title,client,industry,services,cover,gallery,challenge,approach,solution,result,date,is_demo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    )
-    .run(
+  await query(
+    "INSERT INTO portfolio(id,slug,title,client,industry,services,cover,gallery,challenge,approach,solution,result,date,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+    [
       id,
       input.slug,
       JSON.stringify(input.title),
@@ -668,21 +692,20 @@ export function createPortfolio(
       JSON.stringify(input.result),
       input.date,
       Number(isDemo),
-    );
-  return getPortfolio(id)!;
+    ],
+  );
+  return (await getPortfolio(id))!;
 }
-export function updatePortfolio(
+export async function updatePortfolio(
   id: string,
   input: Partial<PortfolioInput>,
-): PortfolioProject | null {
-  const existing = getPortfolio(id);
+): Promise<PortfolioProject | null> {
+  const existing = await getPortfolio(id);
   if (!existing) return null;
   const value = { ...existing, ...input };
-  getDb()
-    .prepare(
-      "UPDATE portfolio SET slug=?,title=?,client=?,industry=?,services=?,cover=?,gallery=?,challenge=?,approach=?,solution=?,result=?,date=? WHERE id=?",
-    )
-    .run(
+  await query(
+    "UPDATE portfolio SET slug=$1,title=$2,client=$3,industry=$4,services=$5,cover=$6,gallery=$7,challenge=$8,approach=$9,solution=$10,result=$11,date=$12 WHERE id=$13",
+    [
       value.slug,
       JSON.stringify(value.title),
       value.client,
@@ -696,13 +719,13 @@ export function updatePortfolio(
       JSON.stringify(value.result),
       value.date,
       id,
-    );
-  return getPortfolio(id);
+    ],
+  );
+  return await getPortfolio(id);
 }
-export function listServiceSettings(): ServiceSetting[] {
-  const persisted = getDb()
-    .prepare("SELECT * FROM service_setting")
-    .all() as Row[];
+export async function listServiceSettings(): Promise<ServiceSetting[]> {
+  const persisted = (await query("SELECT * FROM service_setting", []))
+    .rows as Row[];
   return serviceIds
     .map((slug, index) => {
       const value = persisted.find((row) => row.slug === slug);
@@ -714,33 +737,33 @@ export function listServiceSettings(): ServiceSetting[] {
     })
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
-export function updateServiceSetting(
+export async function updateServiceSetting(
   slug: string,
   value: { visible: boolean; sortOrder: number },
 ) {
-  getDb()
-    .prepare(
-      "INSERT INTO service_setting(slug,visible,sort_order) VALUES (?,?,?) ON CONFLICT(slug) DO UPDATE SET visible=excluded.visible,sort_order=excluded.sort_order",
-    )
-    .run(slug, Number(value.visible), value.sortOrder);
+  await query(
+    "INSERT INTO service_setting(slug,visible,sort_order) VALUES ($1,$2,$3) ON CONFLICT(slug) DO UPDATE SET visible=excluded.visible,sort_order=excluded.sort_order",
+    [slug, Number(value.visible), value.sortOrder],
+  );
 }
-export function getAdminOverview() {
-  const leadRows = getDb()
-    .prepare(
-      "SELECT substr(created_at,1,10) AS date,COUNT(*) AS count FROM lead WHERE created_at>=? GROUP BY date ORDER BY date",
+export async function getAdminOverview() {
+  const leadRows = (
+    await query(
+      "SELECT substr(created_at,1,10) AS date,COUNT(*) AS count FROM lead WHERE created_at>=$1 GROUP BY date ORDER BY date",
+      [new Date(Date.now() - 30 * 86400000).toISOString()],
     )
-    .all(new Date(Date.now() - 30 * 86400000).toISOString()) as {
+  ).rows as {
     date: string;
     count: number;
   }[];
-  // Better Auth's current SQLite adapter stores ISO text; support older numeric millisecond values too.
-  const registrationDate =
-    "CASE WHEN typeof(createdAt) IN ('integer','real') THEN date(createdAt / 1000,'unixepoch') ELSE date(createdAt) END";
-  const registrationRows = getDb()
-    .prepare(
-      `SELECT ${registrationDate} AS date,COUNT(*) AS count FROM "user" WHERE ${registrationDate}>=? GROUP BY date ORDER BY date`,
+  // Auth uses timestamptz in PostgreSQL; group in UTC as the existing ISO series does.
+  const registrationDate = `to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+  const registrationRows = (
+    await query(
+      `SELECT ${registrationDate} AS date,COUNT(*) AS count FROM "user" WHERE ${registrationDate}>=$1 GROUP BY date ORDER BY date`,
+      [new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)],
     )
-    .all(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)) as {
+  ).rows as {
     date: string;
     count: number;
   }[];
@@ -751,68 +774,71 @@ export function getAdminOverview() {
         .slice(0, 10);
       return {
         date: day,
-        count: rows.find((row) => row.date === day)?.count || 0,
+        count: Number(rows.find((row) => row.date === day)?.count || 0),
       };
     });
   return {
     stats: {
-      users: count('SELECT COUNT(*) AS count FROM "user"'),
-      customers: count(
+      users: await count('SELECT COUNT(*) AS count FROM "user"'),
+      customers: await count(
         "SELECT COUNT(*) AS count FROM \"user\" WHERE role='USER'",
       ),
       services: serviceIds.length,
-      activeServices: count(
+      activeServices: await count(
         "SELECT COUNT(*) AS count FROM client_service WHERE status='active'",
       ),
-      projects: count("SELECT COUNT(*) AS count FROM project"),
-      activeProjects: count(
+      projects: await count("SELECT COUNT(*) AS count FROM project"),
+      activeProjects: await count(
         "SELECT COUNT(*) AS count FROM project WHERE status IN ('active','review')",
       ),
-      completedProjects: count(
+      completedProjects: await count(
         "SELECT COUNT(*) AS count FROM project WHERE status='completed'",
       ),
-      leads: count("SELECT COUNT(*) AS count FROM lead"),
-      newLeads: count("SELECT COUNT(*) AS count FROM lead WHERE status='new'"),
-      blogPosts: count("SELECT COUNT(*) AS count FROM blog_post"),
-      publishedArticles: count(
+      leads: await count("SELECT COUNT(*) AS count FROM lead"),
+      newLeads: await count(
+        "SELECT COUNT(*) AS count FROM lead WHERE status='new'",
+      ),
+      blogPosts: await count("SELECT COUNT(*) AS count FROM blog_post"),
+      publishedArticles: await count(
         "SELECT COUNT(*) AS count FROM blog_post WHERE published=1",
       ),
-      portfolio: count("SELECT COUNT(*) AS count FROM portfolio"),
+      portfolio: await count("SELECT COUNT(*) AS count FROM portfolio"),
     },
     leadSeries: series(leadRows),
     registrationSeries: series(registrationRows),
-    projectStatus: getDb()
-      .prepare("SELECT status,COUNT(*) AS count FROM project GROUP BY status")
-      .all() as { status: string; count: number }[],
-    serviceDistribution: getDb()
-      .prepare(
-        "SELECT service_slug AS slug,COUNT(*) AS count FROM client_service GROUP BY service_slug",
+    projectStatus: (
+      await query(
+        "SELECT status,COUNT(*)::integer AS count FROM project GROUP BY status",
+        [],
       )
-      .all() as { slug: string; count: number }[],
-    recentLeads: listLeads().slice(0, 5),
-    recentProjects: listProjects().slice(0, 5),
+    ).rows as { status: string; count: number }[],
+    serviceDistribution: (
+      await query(
+        "SELECT service_slug AS slug,COUNT(*)::integer AS count FROM client_service GROUP BY service_slug",
+        [],
+      )
+    ).rows as { slug: string; count: number }[],
+    recentLeads: (await listLeads()).slice(0, 5),
+    recentProjects: (await listProjects()).slice(0, 5),
   };
 }
 
-/** SQLite-backed counters work across workers/restarts; no raw IP is persisted. */
-export function consumeRateLimit(
+/** Atomic PostgreSQL counters work across workers/restarts; no raw IP is persisted. */
+export async function consumeRateLimit(
   identifier: string,
   limit = 5,
   windowMs = 60 * 60 * 1000,
-): boolean {
+): Promise<boolean> {
   const key = createHash("sha256").update(identifier).digest("hex");
   const timestamp = Date.now();
-  return getDb().transaction(() => {
-    getDb().prepare("DELETE FROM rate_limit WHERE reset_at<?").run(timestamp);
-    const row = getDb()
-      .prepare("SELECT count FROM rate_limit WHERE key=?")
-      .get(key) as { count: number } | undefined;
-    if (row && row.count >= limit) return false;
-    getDb()
-      .prepare(
-        "INSERT INTO rate_limit(key,count,reset_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1",
-      )
-      .run(key, timestamp + windowMs);
-    return true;
-  })();
+  await query("DELETE FROM rate_limit WHERE reset_at<$1", [timestamp]);
+  const result = await query(
+    `INSERT INTO rate_limit(key,count,reset_at) VALUES ($1,1,$2)
+     ON CONFLICT(key) DO UPDATE SET
+       count=CASE WHEN rate_limit.reset_at<$3 THEN 1 ELSE rate_limit.count+1 END,
+       reset_at=CASE WHEN rate_limit.reset_at<$3 THEN EXCLUDED.reset_at ELSE rate_limit.reset_at END
+     WHERE rate_limit.reset_at<$3 OR rate_limit.count<$4 RETURNING key`,
+    [key, timestamp + windowMs, timestamp, limit],
+  );
+  return result.rowCount === 1;
 }

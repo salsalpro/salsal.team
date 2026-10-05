@@ -10,10 +10,10 @@ export async function PATCH(request: Request, context: IdContext) {
     const { id } = await context.params;
     if (!(serviceIds as readonly string[]).includes(id))
       throw new ApiError(404, "Service not found.");
-    updateServiceSetting(
+    (await updateServiceSetting(
       id,
       serviceSettingSchema.parse(await readJson(request)),
-    );
+    ));
     return Response.json({ ok: true });
   } catch (error) {
     return failure(error);

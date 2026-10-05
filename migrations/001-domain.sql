@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS profile (
-  user_id TEXT PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
+  user_id TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
   company TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', locale TEXT NOT NULL DEFAULT 'en' CHECK(locale IN ('en','fa'))
 );
 CREATE TABLE IF NOT EXISTS lead (
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS lead (
 );
 CREATE INDEX IF NOT EXISTS lead_status_created_idx ON lead(status, created_at DESC);
 CREATE TABLE IF NOT EXISTS project (
-  id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES user(id) ON DELETE RESTRICT,
+  id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE RESTRICT,
   title TEXT NOT NULL, description TEXT NOT NULL, service_ids TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('planning','active','review','completed','paused')),
   progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100), stage TEXT NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS project (
 );
 CREATE INDEX IF NOT EXISTS project_client_idx ON project(client_id, updated_at DESC);
 CREATE TABLE IF NOT EXISTS client_service (
-  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   service_slug TEXT NOT NULL, package TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','completed','paused')),
   start_date TEXT NOT NULL, end_date TEXT NOT NULL, progress INTEGER NOT NULL CHECK(progress BETWEEN 0 AND 100),
   team TEXT NOT NULL, latest_update TEXT NOT NULL, is_demo INTEGER NOT NULL DEFAULT 0
@@ -33,13 +33,13 @@ CREATE TABLE IF NOT EXISTS deliverable (
 );
 CREATE INDEX IF NOT EXISTS deliverable_project_idx ON deliverable(project_id);
 CREATE TABLE IF NOT EXISTS report (
-  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE, title TEXT NOT NULL, category TEXT NOT NULL,
   period TEXT NOT NULL, summary TEXT NOT NULL, metrics TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, is_demo INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS report_user_idx ON report(user_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS notification (
-  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   title TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS notification_user_idx ON notification(user_id, created_at DESC);
@@ -57,4 +57,4 @@ CREATE TABLE IF NOT EXISTS portfolio (
   is_demo INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS service_setting (slug TEXT PRIMARY KEY, visible INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS rate_limit (key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS rate_limit (key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at BIGINT NOT NULL);

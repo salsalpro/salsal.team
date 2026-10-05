@@ -10,9 +10,9 @@ const slugs = [
   "photography",
   "videography",
 ];
-export function Ecosystem({ locale }: { locale: Locale }) {
+export async function Ecosystem({ locale }: { locale: Locale }) {
   const d = dictionary(locale).home;
-  const services = getVisibleServices(locale);
+  const services = (await getVisibleServices(locale));
   return (
     <div className="ecosystem" aria-label={d.systemTitle}>
       <svg

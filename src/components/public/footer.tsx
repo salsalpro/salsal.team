@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Brand } from "./brand";
 import { dictionary, type Locale } from "@/lib/i18n";
 import { getVisibleServices } from "@/lib/catalog";
-export function Footer({ locale }: { locale: Locale }) {
+export async function Footer({ locale }: { locale: Locale }) {
   const d = dictionary(locale);
   return (
     <footer className="site-footer">
@@ -15,7 +15,7 @@ export function Footer({ locale }: { locale: Locale }) {
           <div className="footer-links">
             <div>
               <strong>{d.nav.services}</strong>
-              {getVisibleServices(locale)
+              {(await getVisibleServices(locale))
                 .slice(0, 4)
                 .map((s) => (
                   <Link href={`/${locale}/services/${s.slug}`} key={s.slug}>

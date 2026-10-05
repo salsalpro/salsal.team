@@ -32,7 +32,7 @@ import {
 } from "./primitives";
 import { BarChart } from "./charts";
 
-type DashboardData = ReturnType<typeof getDashboardData>;
+type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
 export function CustomerOverview({
   data,
   locale,

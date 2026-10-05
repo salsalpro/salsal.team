@@ -27,7 +27,7 @@ export default async function Portfolio({
   const locale = getLocale((await params).locale);
   const d = dictionary(locale);
   const t = d.portfolio;
-  const projects = listPortfolio();
+  const projects = (await listPortfolio());
   return (
     <div className="container">
       <div className="page-hero">

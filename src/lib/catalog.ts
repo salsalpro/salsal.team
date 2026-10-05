@@ -1,8 +1,8 @@
 import { getServices } from "@/content/services";
 import { listServiceSettings } from "./repository";
 import type { Locale } from "./i18n";
-export function getVisibleServices(locale: Locale) {
-  const settings = listServiceSettings();
+export async function getVisibleServices(locale: Locale) {
+  const settings = (await listServiceSettings());
   return settings
     .filter((s) => s.visible)
     .flatMap((setting) =>
