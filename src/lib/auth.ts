@@ -10,7 +10,7 @@ if (!secret || secret.length < 32) {
 
 export const auth = betterAuth({
   appName: "Salsal",
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000" || "https://salsalteam.vercel.app",
   secret,
   database: getDb(),
   emailAndPassword: {
