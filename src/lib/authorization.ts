@@ -4,14 +4,8 @@ import { auth } from "./auth";
 import { query } from "./db";
 import type { Locale, Role } from "./domain";
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import { ApiError } from "./api-error";
+export { ApiError } from "./api-error";
 
 export async function getSession(requestHeaders?: Headers) {
   const session = await auth.api.getSession({

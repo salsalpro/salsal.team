@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { Languages } from "lucide-react";
 import type { Locale } from "@/lib/i18n";
 const labels = {
@@ -9,9 +9,36 @@ const labels = {
 } as const;
 export function LocaleSwitch({ locale }: { locale: Locale }) {
   const pathname = usePathname();
+  const router = useRouter();
   const query = useSearchParams();
   const item = labels[locale];
-  const path = pathname.replace(/^\/(en|fa)(?=\/|$)/, `/${item.target}`);
+  const switchingArticle = /^\/(en|fa)\/blog\/[^/]+$/.test(pathname);
+  const path = switchingArticle
+    ? `/${item.target}/blog`
+    : pathname.replace(/^\/(en|fa)(?=\/|$)/, `/${item.target}`);
+  if (switchingArticle)
+    return (
+      <button
+        type="button"
+        className="locale-switch"
+        aria-label={item.title}
+        onClick={() => {
+          const alternate = Array.from(
+            document.querySelectorAll<HTMLLinkElement>(
+              'link[rel="alternate"][hreflang]',
+            ),
+          ).find((link) => link.hreflang === item.target);
+          router.push(
+            alternate
+              ? new URL(alternate.href).pathname
+              : `/${item.target}/blog`,
+          );
+        }}
+      >
+        <Languages size={15} />
+        <span lang={item.target}>{item.label}</span>
+      </button>
+    );
   return (
     <Link
       href={`${path}${query.size ? "?" + query.toString() : ""}`}

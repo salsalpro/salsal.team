@@ -51,7 +51,7 @@ export default defineConfig({
       DEMO_ADMIN_PASSWORD: randomBytes(24).toString("base64url"),
       DEMO_CLIENT_PASSWORD: randomBytes(24).toString("base64url"),
       BETTER_AUTH_SECRET: testSecret,
-      BETTER_AUTH_URL: "http://localhost:3000",
+      BETTER_AUTH_URL: "http://localhost:3100",
       NEXT_PUBLIC_SITE_URL: "http://localhost:3100",
       TMPDIR: `${process.cwd()}/work/tmp`,
     },

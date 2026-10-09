@@ -1,3 +1,4 @@
+import { articleMessages } from "@/content/article-messages";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -508,11 +509,14 @@ export function UserDetail({
 export function BlogList({
   posts,
   locale,
+  filters,
 }: {
   posts: BlogPost[];
   locale: Locale;
+  filters?: { search: string; language: string; status: string };
 }) {
   const t = dashboardMessages(locale);
+  const a = articleMessages(locale);
   return (
     <>
       <PageHeading
@@ -527,6 +531,40 @@ export function BlogList({
           </Link>
         }
       />
+      <form className="workspace-filters" method="get">
+        <input
+          className="workspace-filter-select"
+          type="search"
+          name="q"
+          aria-label={a.search}
+          placeholder={a.search}
+          defaultValue={filters?.search}
+        />
+        <select
+          className="workspace-filter-select"
+          name="language"
+          aria-label={a.language}
+          defaultValue={filters?.language || ""}
+        >
+          <option value="">{a.allLanguages}</option>
+          <option value="fa">فارسی</option>
+          <option value="en">English</option>
+        </select>
+        <select
+          className="workspace-filter-select"
+          name="status"
+          aria-label={a.status}
+          defaultValue={filters?.status || ""}
+        >
+          <option value="">{a.allStatuses}</option>
+          <option value="draft">{a.draft}</option>
+          <option value="published">{a.published}</option>
+          <option value="unpublished">{a.unpublished}</option>
+        </select>
+        <button type="submit" className="workspace-button">
+          {a.search}
+        </button>
+      </form>
       <Panel>
         {posts.length ? (
           <TableWrap>
@@ -548,17 +586,23 @@ export function BlogList({
                         className="workspace-table-primary"
                         href={`/${locale}/admin/blog/${post.id}`}
                       >
-                        {post.title[locale]}
+                        {post.title[post.primaryLanguage || locale]}
                       </Link>
                       <small className="workspace-table-subtext">
-                        {post.category[locale]}
+                        {post.category[post.primaryLanguage || locale]}
                       </small>
                       {post.isDemo && <DemoBadge locale={locale} />}
                     </td>
                     <td>{post.author}</td>
                     <td>
                       <StatusBadge
-                        status={post.published ? "published" : "draft"}
+                        status={
+                          post.published
+                            ? "published"
+                            : post.editorial.unpublished
+                              ? "unpublished"
+                              : "draft"
+                        }
                         locale={locale}
                       />
                     </td>
@@ -571,7 +615,7 @@ export function BlogList({
                         {post.published && (
                           <Link
                             className="workspace-icon-button"
-                            href={`/${locale}/blog/${post.slug}`}
+                            href={`/${post.primaryLanguage || locale}/blog/${post.slug}`}
                             aria-label={t.publicPage}
                           >
                             <ArrowUpRight size={17} />

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { articleImageSchema, editorialSchema } from "./article-content";
 
 export const serviceIds = [
   "digital-marketing",
@@ -82,6 +83,10 @@ const localImage = z
       (/^\/images\/[a-zA-Z0-9_./-]+$/.test(value) && !value.includes("..")),
     "Use an image from /images/.",
   );
+const articleLocalized = (max: number) =>
+  z
+    .object({ en: z.string().trim().max(max), fa: z.string().trim().max(max) })
+    .strict();
 export const blogSchema = z
   .object({
     slug: z
@@ -90,18 +95,26 @@ export const blogSchema = z
       .min(3)
       .max(150)
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    title: localizedShort,
-    excerpt: localizedSchema,
-    content: localizedSchema,
-    category: localizedShort,
+    title: articleLocalized(300),
+    excerpt: articleLocalized(1000),
+    content: articleLocalized(200000),
+    category: articleLocalized(100),
     author: z.string().trim().min(2).max(100),
-    cover: localImage.default(""),
+    cover: articleImageSchema.default(""),
     published: z.boolean().default(false),
-    seoTitle: localizedShort,
-    seoDescription: localizedSchema,
+    seoTitle: articleLocalized(200),
+    seoDescription: articleLocalized(500),
+    primaryLanguage: z.enum(["en", "fa"]).nullable().default(null),
+    editorial: editorialSchema.default({
+      languageMode: "manual",
+      unpublished: false,
+    }),
   })
   .strict();
-export const blogUpdateSchema = blogSchema.partial();
+export const blogUpdateSchema = blogSchema
+  .partial()
+  .extend({ expectedUpdatedAt: z.iso.datetime().optional() })
+  .strict();
 export const milestoneSchema = z
   .object({
     id: z.string().min(1).max(100),

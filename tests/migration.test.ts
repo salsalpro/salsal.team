@@ -12,13 +12,7 @@ import {
   createTestSchema,
   dropTestSchema,
 } from "../scripts/test-database";
-import {
-  getDb,
-  closeDb,
-  query,
-  migrateDomain,
-  transaction,
-} from "../src/lib/db";
+import { getDb, closeDb, query, transaction } from "../src/lib/db";
 import {
   consumeRateLimit,
   listUsers,
@@ -225,7 +219,15 @@ before(async () => {
     .prepare("INSERT INTO service_setting(slug,visible) VALUES (?,?)")
     .run("seo", 0);
   await (await getMigrations(postgresAuth.options)).runMigrations();
-  await migrateDomain();
+  // The legacy transfer deliberately targets the original schema before CMS expansion.
+  await query(readFileSync("migrations/001-domain.sql", "utf8"));
+  await query(
+    "CREATE TABLE schema_migration(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)",
+  );
+  await query("INSERT INTO schema_migration VALUES ($1,$2)", [
+    "001-domain.sql",
+    new Date().toISOString(),
+  ]);
 });
 after(async () => {
   source.close();

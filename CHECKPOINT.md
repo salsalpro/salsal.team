@@ -1,5 +1,7 @@
 # Salsal continuation checkpoint
 
-The active task is the existing SQLite → PostgreSQL migration. Its authoritative progress and exact next step are in [CODEX_MIGRATION_CHECKPOINT.md](CODEX_MIGRATION_CHECKPOINT.md), as requested October 5, 2026. Read that file and actual Git state before editing; do not restart completed work.
+Current feature: existing Blog CMS upgrade. Start with [docs/codex/blog-cms/RESUME.md](docs/codex/blog-cms/RESUME.md), then its CHECKPOINT/TASKS and actual Git state. Work only in `/home/salsal/Desktop/salsal.team`; do not rebuild or redesign the app.
 
-The operator backup/import/cutover/rollback procedure is [POSTGRESQL_MIGRATION.md](POSTGRESQL_MIGRATION.md). Work only in `/home/salsal/Desktop/salsal.team`. Preserve existing data, uncommitted changes, UI, role checks and validation. No commits, push or deployment have been performed.
+Previous PostgreSQL migration is already in the current committed baseline. Local runtime activation completed; DATABASE_URL is privately configured, and local CMS migration 002 was applied after backup with all three legacy bilingual articles unchanged. Historical migration verification/runbook remains in [CODEX_MIGRATION_CHECKPOINT.md](CODEX_MIGRATION_CHECKPOINT.md) and [POSTGRESQL_MIGRATION.md](POSTGRESQL_MIGRATION.md); their older pending-local-activation statements are historical, not current operational instructions.
+
+CMS production migration/deployment and durable Blob verification remain pending. Preserve data and all existing changes. No commit, push, production migration or deployment was performed in the CMS session.

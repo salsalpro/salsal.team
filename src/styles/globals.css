@@ -1891,3 +1891,113 @@ html[lang="fa"] .eyebrow {
     opacity: 0.7;
   }
 }
+
+/* Rich article content only; existing site typography and layouts stay intact. */
+.article-rich-content {
+  overflow-wrap: anywhere;
+}
+.article-rich-content img,
+.article-featured-image img {
+  max-width: 100%;
+  height: auto;
+}
+.article-featured-image img {
+  border-radius: 20px;
+}
+.article-featured-image {
+  margin-block-end: 30px;
+}
+.article-rich-content figure {
+  margin-block: 24px;
+}
+.article-rich-content figcaption,
+.article-featured-image figcaption {
+  margin-block-start: 8px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.article-rich-content:not(.prose) h2,
+.workspace .article-rich-content h2 {
+  font-size: 1.5rem;
+  margin-block: 28px 16px;
+}
+.article-rich-content h3,
+.workspace .article-rich-content h3 {
+  font-size: 1.25rem;
+  margin-block: 24px 12px;
+}
+.article-rich-content h4,
+.article-rich-content h5,
+.article-rich-content h6 {
+  font-size: 1rem;
+  font-weight: 650;
+  margin-block: 20px 12px;
+}
+.article-rich-content:not(.prose) p {
+  margin-block: 16px;
+}
+.article-rich-content ul,
+.article-rich-content ol {
+  padding-inline-start: 24px;
+  margin-block: 16px;
+}
+.article-rich-content ul {
+  list-style: disc;
+}
+.article-rich-content ol {
+  list-style: decimal;
+}
+.article-rich-content li p {
+  margin-block: 6px;
+}
+.article-rich-content blockquote {
+  border-inline-start: 3px solid var(--purple);
+  padding-inline-start: 20px;
+  margin-block: 24px;
+}
+.article-rich-content a {
+  color: var(--purple);
+  text-decoration: underline;
+}
+.article-rich-content pre {
+  white-space: pre;
+  overflow-x: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  direction: ltr;
+  text-align: left;
+}
+.article-rich-content code {
+  font-family: monospace;
+}
+.article-rich-content hr {
+  border: 0;
+  border-block-start: 1px solid var(--line);
+  margin-block: 24px;
+}
+.article-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.article-rich-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block: 20px;
+}
+.article-rich-content th,
+.article-rich-content td {
+  min-width: 80px;
+  border: 1px solid var(--line);
+  padding: 12px;
+  vertical-align: top;
+}
+.article-rich-content th {
+  font-weight: 650;
+}
+.article-editor .selectedCell {
+  background: var(--workspace-bg);
+}
+.article-editor .ProseMirror-selectednode {
+  outline: 2px solid var(--purple);
+}

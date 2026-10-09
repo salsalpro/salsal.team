@@ -100,7 +100,7 @@ test("migrations are repeatable and tracked", async () => {
         )
       ).rows[0] as { count: number }
     ).count,
-    1,
+    2,
   );
 });
 

@@ -1,3 +1,4 @@
+import { richDocumentSchema } from "../src/lib/article-content";
 import { test as base, expect, type Page } from "@playwright/test";
 import { readFileSync, mkdirSync } from "node:fs";
 import { query, closeDb } from "../src/lib/db";
@@ -322,9 +323,11 @@ test("customer routes, private file download, profile, RTL dashboard and signout
   expect((await page.request.get("/api/profile")).status()).toBe(401);
   expect(errors).toEqual([]);
 });
-test("admin routes, user search, bilingual article create, publish and unpublish", async ({
+test("admin routes, user search, single-language article create, publish and unpublish", async ({
   page,
-}) => {
+}, testInfo) => {
+  const slug = `browser-editorial-test-${testInfo.repeatEachIndex}`;
+  const title = `Browser editorial test ${testInfo.repeatEachIndex}`;
   await signIn(page, admin);
   for (const section of [
     "",
@@ -345,42 +348,69 @@ test("admin routes, user search, bilingual article create, publish and unpublish
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await page.goto("/en/admin/blog/new");
+  await page.getByLabel("Article language", { exact: true }).selectOption("en");
   for (const [name, value] of Object.entries({
-    titleEn: "Browser editorial test",
-    titleFa: "مقاله آزمایشی مرورگر",
-    slug: "browser-editorial-test",
-    excerptEn: "A browser-created bilingual article for testing publication.",
-    excerptFa: "مقاله دو زبانه برای بررسی گردش انتشار در مرورگر.",
-    contentEn:
-      "A complete test article written to verify the real administration flow.",
-    contentFa:
-      "محتوای کامل آزمایشی برای بررسی روند واقعی مدیریت و انتشار مقاله.",
-    categoryEn: "Strategy",
-    categoryFa: "استراتژی",
+    title,
+    slug,
+    excerpt: "A browser-created article for testing publication.",
+    category: "Strategy",
   }))
     await page.locator(`[name="${name}"]`).fill(value);
+  await page
+    .getByRole("textbox", { name: "Article body", exact: true })
+    .fill(
+      "A complete test article written to verify the real administration flow.",
+    );
   await page
     .getByRole("button", { name: "Create article", exact: true })
     .click();
   await expect(page).toHaveURL("/en/admin/blog");
-  expect(
-    (await page.request.get("/en/blog/browser-editorial-test")).status(),
-  ).toBe(404);
+  expect((await page.request.get(`/en/blog/${slug}`)).status()).toBe(404);
+  await page.getByRole("link", { name: title, exact: true }).click();
   await page
-    .getByRole("link", { name: "Browser editorial test", exact: true })
-    .click();
-  await page.getByLabel("Publish article", { exact: true }).check();
+    .getByLabel("Publication status", { exact: true })
+    .selectOption("published");
+  await expect(
+    page.getByLabel("Publication status", { exact: true }),
+  ).toHaveValue("published");
+  const publication = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/admin/blog/") &&
+      response.request().method() === "PATCH",
+  );
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("status")).toContainText("Changes saved");
+  const published = await publication;
+  expect(published.status()).toBe(200);
+  expect((await published.json()).post.published).toBe(true);
+  await expect(page.locator(".workspace-form-feedback.success")).toContainText(
+    "Changes saved",
+  );
+  expect((await page.request.get(`/en/blog/${slug}`)).status()).toBe(200);
+  expect((await page.request.get(`/fa/blog/${slug}`)).status()).toBe(404);
+  await page
+    .getByLabel("Publication status", { exact: true })
+    .selectOption("unpublished");
+  const unpublication = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/admin/blog/") &&
+      response.request().method() === "PATCH",
+  );
+  await page.getByRole("button", { name: "Save changes" }).click();
+  const unpublished = await unpublication;
+  expect(unpublished.status()).toBe(200);
+  expect((await unpublished.json()).post.published).toBe(false);
+  await expect(page.locator(".workspace-form-feedback.success")).toContainText(
+    "Changes saved",
+  );
+  expect((await page.request.get(`/en/blog/${slug}`)).status()).toBe(404);
+  const id = (await published.json()).post.id;
   expect(
-    (await page.request.get("/fa/blog/browser-editorial-test")).status(),
+    (
+      await page.request.delete(`/api/admin/blog/${id}`, {
+        headers: { origin: "http://localhost:3100" },
+      })
+    ).status(),
   ).toBe(200);
-  await page.getByLabel("Publish article", { exact: true }).uncheck();
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("status")).toContainText("Changes saved");
-  expect(
-    (await page.request.get("/en/blog/browser-editorial-test")).status(),
-  ).toBe(404);
 });
 test("admin project creation, milestones, deliverable and service visibility", async ({
   page,
@@ -602,4 +632,373 @@ test("admin assignments, deliverable creation and portfolio edits reach the righ
   expect(await (await page.request.get(href!)).text()).toBe(
     "Authorized client-only browser test brief.",
   );
+});
+
+test("rich Persian and English drafts persist through reload, edit, SEO, preview and publication", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120000);
+  await signIn(page, admin);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  for (const language of ["fa", "en"] as const) {
+    const title =
+      language === "fa"
+        ? "مقاله فارسی برای بررسی کامل مدیریت محتوا"
+        : "Rich English publishing workflow";
+    const slug = `rich-browser-${language}`;
+    await page.goto("/en/admin/blog/new");
+    await page.getByLabel("Article title", { exact: true }).fill(title);
+    await expect(
+      page.getByText(
+        `Detected language: ${language === "fa" ? "فارسی" : "English"}`,
+        { exact: false },
+      ),
+    ).toBeVisible();
+    await page
+      .getByLabel("Article language", { exact: true })
+      .selectOption(language);
+    await page.getByLabel("URL slug", { exact: true }).fill(slug);
+    await page.getByLabel("Excerpt", { exact: true }).fill(title + " excerpt");
+    await page.getByLabel("Category", { exact: true }).fill("Editorial");
+    await page
+      .getByLabel("Tags (comma separated)", { exact: true })
+      .fill("Growth, SEO");
+    const body = page.getByRole("textbox", {
+      name: "Article body",
+      exact: true,
+    });
+    await expect(body).toHaveAttribute(
+      "dir",
+      language === "fa" ? "rtl" : "ltr",
+    );
+    const html = `<h2>${title}</h2><p><strong>Bold</strong> <em>Italic</em> <u>Underline</u> <s>Strike</s> <a href="/en/blog">Internal link</a> <a href="https://example.test/">External link</a></p><ul><li>Bullet item</li></ul><ol><li>Numbered item</li></ol><blockquote><p>Editorial quotation</p></blockquote><pre><code>const value = 42;</code></pre><hr><table><tbody><tr><th>Header</th><td>Persistent cell</td></tr></tbody></table>`;
+    await page.evaluate(
+      async ({ html, title }) => {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([title], { type: "text/plain" }),
+          }),
+        ]);
+      },
+      { html, title },
+    );
+    await body.click();
+    await page.keyboard.press("Control+V");
+    await expect(body.locator("table")).toBeVisible();
+    await expect(body.locator("strong")).toHaveText("Bold");
+    const actualDocument = await body.evaluate((element) =>
+      (
+        element as HTMLElement & { editor: { getJSON(): unknown } }
+      ).editor.getJSON(),
+    );
+    expect(
+      richDocumentSchema.safeParse(actualDocument).success,
+      JSON.stringify(actualDocument),
+    ).toBe(true);
+    await page.getByText("SEO and sharing", { exact: true }).click();
+    for (const [name, value] of Object.entries({
+      seoTitle: title + " SEO",
+      seoDescription: "A persisted description for search engines.",
+      focusKeyphrase: "Editorial",
+      secondaryKeyphrases: "SEO, Growth",
+      canonical: `http://localhost:3100/${language}/blog/${slug}`,
+      ogTitle: "Social preview title",
+      ogDescription: "Social preview description",
+      twitterTitle: "X preview title",
+      twitterDescription: "X preview description",
+    }))
+      await page.locator(`[name="${name}"]`).fill(value);
+    await page
+      .getByRole("button", { name: "Preview article", exact: true })
+      .click();
+    await expect(
+      page
+        .getByRole("region", { name: "Preview article", exact: true })
+        .locator("table"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Unsaved changes", { exact: true }),
+    ).toBeVisible();
+    for (const width of [320, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await noOverflow(page);
+    }
+    await page.screenshot({
+      path: `work/screenshots/cms-${language}-editor.png`,
+      fullPage: true,
+    });
+    const created = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/admin/blog") && r.request().method() === "POST",
+    );
+    await page
+      .getByRole("button", { name: "Create article", exact: true })
+      .click();
+    const response = await created;
+    expect(response.status()).toBe(201);
+    const { post } = await response.json();
+    await expect(page).toHaveURL("/en/admin/blog");
+    await page.goto(`/en/admin/blog/${post.id}`);
+    await expect(
+      page.getByLabel("Article language", { exact: true }),
+    ).toHaveValue(language);
+    await expect(page.getByLabel("Article title", { exact: true })).toHaveValue(
+      title,
+    );
+    await expect(
+      page
+        .getByRole("textbox", { name: "Article body", exact: true })
+        .locator("table"),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel("Tags (comma separated)", { exact: true }),
+    ).toHaveValue("Growth, SEO");
+    await page.getByText("SEO and sharing", { exact: true }).click();
+    await expect(page.locator('[name="ogTitle"]')).toHaveValue(
+      "Social preview title",
+    );
+    await expect(page.locator('[name="secondaryKeyphrases"]')).toHaveValue(
+      "SEO, Growth",
+    );
+    await page
+      .locator('[name="seoDescription"]')
+      .fill("Edited persisted description.");
+    await page
+      .getByLabel("Publication status", { exact: true })
+      .selectOption("published");
+    await page
+      .getByRole("button", { name: "Save changes", exact: true })
+      .click();
+    await expect(
+      page.locator(".workspace-form-feedback.success"),
+    ).toBeVisible();
+    await page.reload();
+    await page.getByText("SEO and sharing", { exact: true }).click();
+    await expect(page.locator('[name="seoDescription"]')).toHaveValue(
+      "Edited persisted description.",
+    );
+    const persisted = (
+      await query<{
+        editorial: Record<
+          "fa" | "en",
+          { document: { content: { type: string }[] } }
+        >;
+        primary_language: string;
+        published: number;
+      }>(
+        "SELECT editorial,primary_language,published FROM blog_post WHERE id=$1",
+        [post.id],
+      )
+    ).rows[0];
+    expect(persisted.primary_language).toBe(language);
+    expect(persisted.published).toBe(1);
+    expect(
+      persisted.editorial[language].document.content.some(
+        (n: { type: string }) => n.type === "table",
+      ),
+    ).toBe(true);
+    const publicResponse = await page.goto(`/${language}/blog/${slug}`);
+    expect(publicResponse?.status()).toBe(200);
+    await expect(page.locator("article")).toHaveAttribute(
+      "dir",
+      language === "fa" ? "rtl" : "ltr",
+    );
+    await expect(page.locator("article table")).toBeVisible();
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+      "content",
+      "Edited persisted description.",
+    );
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
+      "content",
+      "Social preview title",
+    );
+    await expect(page.locator('meta[name="twitter:title"]')).toHaveAttribute(
+      "content",
+      "X preview title",
+    );
+    await expect(page.locator('link[rel="alternate"][hreflang]')).toHaveCount(
+      1,
+    );
+    const jsonLd = JSON.parse(
+      (await page
+        .locator('script[type="application/ld+json"]')
+        .textContent()) || "{}",
+    );
+    expect(jsonLd.inLanguage).toBe(language);
+    expect(
+      (
+        await page.request.get(
+          `/${language === "fa" ? "en" : "fa"}/blog/${slug}`,
+        )
+      ).status(),
+    ).toBe(404);
+    const sitemap = await (await page.request.get("/sitemap.xml")).text();
+    expect(sitemap).toContain(`http://localhost:3100/${language}/blog/${slug}`);
+    expect(sitemap).not.toContain(
+      `/${language === "fa" ? "en" : "fa"}/blog/${slug}`,
+    );
+    await page.goto(`/en/admin/blog/${post.id}`);
+    await page.getByText("SEO and sharing", { exact: true }).click();
+    await page
+      .getByLabel("Exclude from search indexing", { exact: true })
+      .check();
+    await page
+      .getByRole("button", { name: "Save changes", exact: true })
+      .click();
+    await expect(
+      page.locator(".workspace-form-feedback.success"),
+    ).toBeVisible();
+    await page.goto(`/${language}/blog/${slug}`);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      "content",
+      /noindex/,
+    );
+    expect(await (await page.request.get("/sitemap.xml")).text()).not.toContain(
+      `/blog/${slug}`,
+    );
+    await page.goto(`/en/admin/blog/${post.id}`);
+    await page
+      .getByLabel("Publication status", { exact: true })
+      .selectOption("unpublished");
+    await page
+      .getByRole("button", { name: "Save changes", exact: true })
+      .click();
+    await expect(
+      page.locator(".workspace-form-feedback.success"),
+    ).toBeVisible();
+    expect((await page.request.get(`/${language}/blog/${slug}`)).status()).toBe(
+      404,
+    );
+  }
+  await page.goto("/en/admin/blog");
+  await page.getByLabel("Article language", { exact: true }).selectOption("fa");
+  await page
+    .getByLabel("Publication status", { exact: true })
+    .selectOption("unpublished");
+  await page
+    .getByRole("button", { name: "Search articles", exact: true })
+    .click();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await page
+    .getByRole("link", {
+      name: "مقاله فارسی برای بررسی کامل مدیریت محتوا",
+      exact: true,
+    })
+    .click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page).toHaveURL("/en/admin/blog");
+  expect(
+    (await query("SELECT id FROM blog_post WHERE slug='rich-browser-fa'"))
+      .rowCount,
+  ).toBe(0);
+});
+
+test("legacy bilingual editor, unsaved navigation and image validation feedback", async ({
+  page,
+}) => {
+  await signIn(page, admin);
+  await page.goto("/en/admin/blog/blog-measurement");
+  await expect(page.getByText(/Legacy bilingual article/)).toBeVisible();
+  const original = await page
+    .getByLabel("Article title", { exact: true })
+    .inputValue();
+  await page.getByLabel("Article language", { exact: true }).selectOption("fa");
+  await expect(
+    page.getByLabel("Article title", { exact: true }),
+  ).not.toHaveValue(original);
+  await page.getByLabel("Article language", { exact: true }).selectOption("en");
+  await expect(page.getByLabel("Article title", { exact: true })).toHaveValue(
+    original,
+  );
+  await page
+    .getByLabel("Article title", { exact: true })
+    .fill(original + " unsaved");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.locator(".workspace-back-link").click();
+  await expect(page).toHaveURL("/en/admin/blog/blog-measurement");
+  await page.getByText("Media", { exact: true }).click();
+  await page
+    .getByLabel("Featured image", { exact: true })
+    .setInputFiles({
+      name: "fake.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("<svg onload='alert(1)'/>"),
+    });
+  await expect(page.locator(".article-upload [role=alert]")).toContainText(
+    "not a supported",
+  );
+  const denied = await page.request.post("/api/admin/blog/images", {
+    headers: { origin: "https://untrusted.test" },
+    multipart: {
+      file: {
+        name: "fake.png",
+        mimeType: "image/png",
+        buffer: Buffer.from("not pixels"),
+      },
+    },
+  });
+  expect(denied.status()).toBe(403);
+});
+
+test("rich editor toolbar headings, marks, links, tables and undo/redo", async ({
+  page,
+}) => {
+  await signIn(page, admin);
+  await page.goto("/en/admin/blog/new");
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(
+    0,
+  );
+  const body = page.getByRole("textbox", { name: "Article body", exact: true });
+  await body.fill("Formatting example");
+  await body.press("Control+A");
+  for (const name of ["Bold", "Italic", "Underline", "Strikethrough"])
+    await page.getByRole("button", { name, exact: true }).click();
+  for (const tag of ["strong", "em", "u", "s"])
+    await expect(body.locator(tag)).toContainText("Formatting example");
+  for (const level of [1, 2, 3, 4, 5, 6]) {
+    await page
+      .getByRole("combobox", { name: "Paragraph", exact: true })
+      .selectOption(String(level));
+    await expect(
+      body.locator(`h${level}`).filter({ hasText: "Formatting example" }),
+    ).toContainText("Formatting example");
+  }
+  await page
+    .getByRole("combobox", { name: "Paragraph", exact: true })
+    .selectOption("p");
+  page.once("dialog", (d) => d.accept("/en/services/seo"));
+  await page.getByRole("button", { name: "Link", exact: true }).click();
+  await expect(body.locator("a")).toHaveAttribute("href", "/en/services/seo");
+  await body.click();
+  await body.press("Control+End");
+  await page.getByRole("button", { name: "Insert table", exact: true }).click();
+  await expect(body.locator("tr")).toHaveCount(3);
+  await body.locator("th").first().click();
+  // ProseMirror groups history within 500ms; begin an independent table action.
+  await page.waitForTimeout(600);
+  await page
+    .getByRole("button", { name: "Add table row", exact: true })
+    .click();
+  await expect(body.locator("tr")).toHaveCount(4);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(body.locator("tr")).toHaveCount(3);
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(body.locator("tr")).toHaveCount(4);
+  await page
+    .getByRole("button", { name: "Add table column", exact: true })
+    .click();
+  await expect(body.locator("tr").first().locator("th,td")).toHaveCount(4);
+  await page
+    .getByRole("button", { name: "Delete table column", exact: true })
+    .click();
+  await expect(body.locator("tr").first().locator("th,td")).toHaveCount(3);
+  await page
+    .getByRole("button", { name: "Delete table row", exact: true })
+    .click();
+  await expect(body.locator("tr")).toHaveCount(3);
+  await page.getByRole("button", { name: "Remove table", exact: true }).click();
+  await expect(body.locator("table")).toHaveCount(0);
 });

@@ -5,7 +5,9 @@
  */
 import type { BlogInput, PortfolioInput } from "@/lib/validation";
 
-export const articleSeeds: (BlogInput & { id: string })[] = [
+export const articleSeeds: (Omit<BlogInput, "primaryLanguage" | "editorial"> & {
+  id: string;
+})[] = [
   {
     id: "blog-measurement",
     slug: "before-you-measure-decide-what-matters",

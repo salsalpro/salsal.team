@@ -3,6 +3,7 @@ import Image from "next/image";
 import { dictionary, formatDate, type Locale } from "@/lib/i18n";
 import type { BlogPost, PortfolioProject } from "@/lib/domain";
 import { ProjectCover } from "./sections";
+import { articleLanguages } from "@/lib/article-seo";
 export function PortfolioCards({
   locale,
   projects,
@@ -54,6 +55,7 @@ export function ArticleCards({
   articles: BlogPost[];
 }) {
   const d = dictionary(locale);
+  articles = articles.filter((a) => articleLanguages(a).includes(locale));
   return articles.length ? (
     <div className="insights-grid">
       {articles.map((a) => (

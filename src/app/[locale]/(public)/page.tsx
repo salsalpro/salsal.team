@@ -38,7 +38,11 @@ export default async function Home({
   const d = dictionary(locale);
   const h = d.home;
   const projects = (await listPortfolio()).slice(0, 3);
-  const articles = (await listBlogPosts({ publishedOnly: true, limit: 3 }));
+  const articles = await listBlogPosts({
+    publishedOnly: true,
+    limit: 3,
+    language: locale,
+  });
   return (
     <>
       <section className="hero">

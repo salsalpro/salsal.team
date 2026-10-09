@@ -34,7 +34,10 @@ export default async function Blog({
       <section className="section" style={{ paddingTop: 20 }}>
         <ArticleCards
           locale={locale}
-          articles={(await listBlogPosts({ publishedOnly: true }))}
+          articles={await listBlogPosts({
+            publishedOnly: true,
+            language: locale,
+          })}
         />
       </section>
       <CtaPanel locale={locale} />

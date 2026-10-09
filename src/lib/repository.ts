@@ -22,7 +22,14 @@ import type {
   ProjectInput,
   ServiceAssignmentInput,
 } from "./validation";
-import { serviceIds } from "./validation";
+import { serviceIds, blogSchema } from "./validation";
+import { ApiError } from "./api-error";
+import {
+  articleDetails,
+  articleImageReferences,
+  detectArticleLanguage,
+  readableText,
+} from "./article-content";
 
 type Row = Record<string, unknown>;
 const s = (value: unknown) => String(value ?? "");
@@ -124,6 +131,14 @@ function mapService(row: Row): ClientService {
 }
 function mapBlog(row: Row): BlogPost {
   return {
+    primaryLanguage:
+      row.primary_language === "fa" || row.primary_language === "en"
+        ? row.primary_language
+        : null,
+    editorial:
+      row.editorial && typeof row.editorial === "object"
+        ? (row.editorial as BlogPost["editorial"])
+        : { languageMode: "manual", unpublished: false },
     id: s(row.id),
     slug: s(row.slug),
     title: json<Localized>(row.title),
@@ -562,98 +577,263 @@ export async function getAuthorizedDeliverable(
 }
 
 export async function listBlogPosts(
-  options: { publishedOnly?: boolean; limit?: number; search?: string } = {},
+  options: {
+    publishedOnly?: boolean;
+    limit?: number | null;
+    search?: string;
+    language?: "en" | "fa";
+    status?: "draft" | "published" | "unpublished";
+  } = {},
 ): Promise<BlogPost[]> {
   const where: string[] = [];
   const params: unknown[] = [];
-  if (options.publishedOnly) where.push("published=1");
-  if (options.search) {
+  if (options.publishedOnly || options.status === "published")
+    where.push("published=1");
+  if (options.status === "draft")
     where.push(
-      `(title ILIKE $${params.length + 1} OR excerpt ILIKE $${params.length + 2})`,
+      "published=0 AND COALESCE(editorial->>'unpublished','false')='false'",
     );
-    params.push(`%${options.search}%`, `%${options.search}%`);
+  if (options.status === "unpublished")
+    where.push("published=0 AND editorial->>'unpublished'='true'");
+  if (options.language) {
+    params.push(options.language);
+    where.push(
+      `(primary_language IS NULL OR primary_language=$${params.length})`,
+    );
   }
-  params.push(Math.min(500, Math.max(1, options.limit || 100)));
+  if (options.search) {
+    params.push(`%${options.search}%`);
+    where.push(
+      `(title ILIKE $${params.length} OR excerpt ILIKE $${params.length})`,
+    );
+  }
+  if (options.limit !== null)
+    params.push(Math.min(500, Math.max(1, options.limit || 100)));
   return (
-    (
-      await query(
-        `SELECT * FROM blog_post ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY COALESCE(published_at,created_at) DESC LIMIT $${params.length}`,
-        [...params],
-      )
-    ).rows as Row[]
-  ).map(mapBlog);
+    await query(
+      `SELECT * FROM blog_post ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY COALESCE(published_at,created_at) DESC ${options.limit === null ? "" : `LIMIT $${params.length}`}`,
+      params,
+    )
+  ).rows.map(mapBlog);
 }
 export async function getBlogPost(
   slugOrId: string,
-  options: { publishedOnly?: boolean } = {},
+  options: { publishedOnly?: boolean; language?: "en" | "fa" } = {},
 ): Promise<BlogPost | null> {
+  const params: unknown[] = [slugOrId];
+  const where = [options.language ? "slug=$1" : "(slug=$1 OR id=$1)"];
+  if (options.language) {
+    params.push(options.language);
+    where.push(`(primary_language IS NULL OR primary_language=$2)`);
+  }
+  if (options.publishedOnly) where.push("published=1");
   const row = (
-    await query(
-      `SELECT * FROM blog_post WHERE (slug=$1 OR id=$2) ${options.publishedOnly ? "AND published=1" : ""}`,
-      [slugOrId, slugOrId],
-    )
-  ).rows[0] as Row | undefined;
+    await query(`SELECT * FROM blog_post WHERE ${where.join(" AND ")}`, params)
+  ).rows[0];
   return row ? mapBlog(row) : null;
+}
+async function validateArticle(input: BlogInput): Promise<BlogInput> {
+  const {
+    slug,
+    title,
+    excerpt,
+    content,
+    category,
+    author,
+    cover,
+    published,
+    seoTitle,
+    seoDescription,
+    primaryLanguage,
+    editorial,
+  } = input;
+  const value = blogSchema.parse({
+    slug,
+    title,
+    excerpt,
+    content,
+    category,
+    author,
+    cover,
+    published,
+    seoTitle,
+    seoDescription,
+    primaryLanguage,
+    editorial,
+  });
+  const languages = value.primaryLanguage
+    ? [value.primaryLanguage]
+    : (["en", "fa"] as const);
+  for (const language of languages) {
+    const details = articleDetails(value.editorial, language);
+    if (details.document)
+      value.content[language] = readableText(details.document);
+    if (!value.title[language])
+      throw new ApiError(
+        400,
+        "An article title is required in its selected language.",
+      );
+    if (
+      value.published &&
+      (!value.content[language].trim() ||
+        !value.excerpt[language].trim() ||
+        !value.category[language].trim())
+    )
+      throw new ApiError(
+        400,
+        "Add article content, an excerpt and a category before publishing.",
+      );
+    if (
+      value.published &&
+      value.editorial.languageMode === "auto" &&
+      !detectArticleLanguage(
+        value.title[language] + " " + value.content[language],
+      )
+    )
+      throw new ApiError(
+        400,
+        "Select the article language explicitly before publishing.",
+      );
+  }
+  const ids = articleImageReferences(value)
+    .filter((src) => src.startsWith("/api/blog-images/"))
+    .map((src) => src.split("/").at(-1)!);
+  if (ids.length) {
+    const found = (
+      await query("SELECT id FROM blog_image WHERE id = ANY($1::text[])", [
+        [...new Set(ids)],
+      ])
+    ).rows;
+    if (found.length !== new Set(ids).size)
+      throw new ApiError(
+        400,
+        "One of the selected article images is unavailable. Upload it again.",
+      );
+  }
+  return value;
 }
 export async function createBlogPost(
   input: BlogInput,
   isDemo = false,
   fixedId?: string,
 ): Promise<BlogPost> {
-  const id = fixedId || randomUUID();
-  const timestamp = now();
-  await query(
-    "INSERT INTO blog_post(id,slug,title,excerpt,content,category,author,cover,published,published_at,seo_title,seo_description,created_at,updated_at,is_demo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
-    [
-      id,
-      input.slug,
-      JSON.stringify(input.title),
-      JSON.stringify(input.excerpt),
-      JSON.stringify(input.content),
-      JSON.stringify(input.category),
-      input.author,
-      input.cover,
-      Number(input.published),
-      input.published ? timestamp : null,
-      JSON.stringify(input.seoTitle),
-      JSON.stringify(input.seoDescription),
-      timestamp,
-      timestamp,
-      Number(isDemo),
-    ],
-  );
-  return (await getBlogPost(id))!;
+  return transaction(async () => {
+    const value = await validateArticle(input);
+    const id = fixedId || randomUUID();
+    const timestamp = now();
+    await query(
+      "INSERT INTO blog_post(id,slug,title,excerpt,content,category,author,cover,published,published_at,seo_title,seo_description,created_at,updated_at,is_demo,primary_language,editorial) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
+      [
+        id,
+        value.slug,
+        JSON.stringify(value.title),
+        JSON.stringify(value.excerpt),
+        JSON.stringify(value.content),
+        JSON.stringify(value.category),
+        value.author,
+        value.cover,
+        Number(value.published),
+        value.published ? timestamp : null,
+        JSON.stringify(value.seoTitle),
+        JSON.stringify(value.seoDescription),
+        timestamp,
+        timestamp,
+        Number(isDemo),
+        value.primaryLanguage,
+        JSON.stringify(value.editorial),
+      ],
+    );
+    return (await getBlogPost(id))!;
+  });
 }
 export async function updateBlogPost(
   id: string,
-  input: Partial<BlogInput>,
+  input: Partial<BlogInput> & { expectedUpdatedAt?: string },
 ): Promise<BlogPost | null> {
-  const existing = await getBlogPost(id);
-  if (!existing) return null;
-  const value = { ...existing, ...input };
-  const publishedAt = value.published ? existing.publishedAt || now() : null;
-  await query(
-    "UPDATE blog_post SET slug=$1,title=$2,excerpt=$3,content=$4,category=$5,author=$6,cover=$7,published=$8,published_at=$9,seo_title=$10,seo_description=$11,updated_at=$12 WHERE id=$13",
-    [
-      value.slug,
-      JSON.stringify(value.title),
-      JSON.stringify(value.excerpt),
-      JSON.stringify(value.content),
-      JSON.stringify(value.category),
-      value.author,
-      value.cover,
-      Number(value.published),
-      publishedAt,
-      JSON.stringify(value.seoTitle),
-      JSON.stringify(value.seoDescription),
-      now(),
-      id,
-    ],
-  );
-  return await getBlogPost(id);
+  return transaction(async () => {
+    const row = (
+      await query("SELECT * FROM blog_post WHERE id=$1 FOR UPDATE", [id])
+    ).rows[0];
+    if (!row) return null;
+    const existing = mapBlog(row);
+    if (
+      input.expectedUpdatedAt &&
+      input.expectedUpdatedAt !== existing.updatedAt
+    )
+      throw new ApiError(
+        409,
+        "This article changed in another session. Reload before saving to avoid overwriting it.",
+      );
+    if (!existing.primaryLanguage && input.primaryLanguage)
+      throw new ApiError(
+        400,
+        "Keep both language versions of this legacy article.",
+      );
+    const value = await validateArticle({
+      ...existing,
+      ...input,
+      editorial: {
+        ...existing.editorial,
+        ...input.editorial,
+        ...(input.editorial?.en
+          ? { en: { ...existing.editorial.en, ...input.editorial.en } }
+          : {}),
+        ...(input.editorial?.fa
+          ? { fa: { ...existing.editorial.fa, ...input.editorial.fa } }
+          : {}),
+      },
+      // Only schema-owned fields may be persisted.
+    } as BlogInput);
+    const publishedAt = value.published
+      ? existing.publishedAt || now()
+      : existing.publishedAt;
+    value.editorial.unpublished =
+      !value.published &&
+      (input.editorial?.unpublished ??
+        (existing.published || existing.editorial.unpublished || false));
+    await query(
+      "UPDATE blog_post SET slug=$1,title=$2,excerpt=$3,content=$4,category=$5,author=$6,cover=$7,published=$8,published_at=$9,seo_title=$10,seo_description=$11,updated_at=$12,primary_language=$13,editorial=$14 WHERE id=$15",
+      [
+        value.slug,
+        JSON.stringify(value.title),
+        JSON.stringify(value.excerpt),
+        JSON.stringify(value.content),
+        JSON.stringify(value.category),
+        value.author,
+        value.cover,
+        Number(value.published),
+        publishedAt,
+        JSON.stringify(value.seoTitle),
+        JSON.stringify(value.seoDescription),
+        now(),
+        value.primaryLanguage,
+        JSON.stringify(value.editorial),
+        id,
+      ],
+    );
+    return await getBlogPost(id);
+  });
 }
 export async function deleteBlogPost(id: string) {
   return (await query("DELETE FROM blog_post WHERE id=$1", [id])).rowCount! > 0;
+}
+export async function articleTaxonomy() {
+  const posts = await listBlogPosts({ limit: 500 });
+  return {
+    categories: [
+      ...new Set(
+        posts.flatMap((p) => [p.category.en, p.category.fa]).filter(Boolean),
+      ),
+    ],
+    tags: [
+      ...new Set(
+        posts.flatMap((p) => [
+          ...(p.editorial.en?.tags || []),
+          ...(p.editorial.fa?.tags || []),
+        ]),
+      ),
+    ],
+  };
 }
 export async function listPortfolio(): Promise<PortfolioProject[]> {
   return (
@@ -841,4 +1021,20 @@ export async function consumeRateLimit(
     [key, timestamp + windowMs, timestamp, limit],
   );
   return result.rowCount === 1;
+}
+
+/** No arbitrary prose or other metadata can authorize public access to private media. */
+export async function isPublishedArticleImage(src: string): Promise<boolean> {
+  const rows = (
+    await query(
+      "SELECT cover,editorial FROM blog_post WHERE published=1 AND (cover=$1 OR editorial::text LIKE $2)",
+      [src, `%${src}%`],
+    )
+  ).rows;
+  return rows.some((row) =>
+    articleImageReferences({
+      cover: String(row.cover),
+      editorial: row.editorial as BlogPost["editorial"],
+    }).includes(src),
+  );
 }

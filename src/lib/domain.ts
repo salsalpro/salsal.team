@@ -1,3 +1,4 @@
+import type { ArticleEditorial } from "./article-content";
 export type Locale = "en" | "fa";
 export type Localized = Record<Locale, string>;
 export type Role = "USER" | "ADMIN";
@@ -100,6 +101,8 @@ export interface Notification {
   read: boolean;
 }
 export interface BlogPost {
+  primaryLanguage: Locale | null;
+  editorial: ArticleEditorial;
   id: string;
   slug: string;
   title: Localized;

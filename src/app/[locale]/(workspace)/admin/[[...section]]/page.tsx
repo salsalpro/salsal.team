@@ -1,3 +1,4 @@
+import { articleTaxonomy } from "@/lib/repository";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -280,7 +281,7 @@ export default async function AdminPage({ params, searchParams }: Props) {
     }
     case "blog": {
       if (id) {
-        const post = id === "new" ? undefined : (await getBlogPost(id));
+        const post = id === "new" ? undefined : await getBlogPost(id);
         if (id !== "new" && !post) notFound();
         content = (
           <>
@@ -293,11 +294,40 @@ export default async function AdminPage({ params, searchParams }: Props) {
             <PageHeading title={post ? t.editArticle : t.newArticle} />
             {post?.isDemo && <DemoNotice locale={locale} />}
             <Panel>
-              <BlogEditor post={post ?? undefined} locale={locale} />
+              <BlogEditor
+                key={post?.id || "new"}
+                post={post ?? undefined}
+                locale={locale}
+                taxonomy={await articleTaxonomy()}
+              />
             </Panel>
           </>
         );
-      } else content = <BlogList posts={(await listBlogPosts())} locale={locale} />;
+      } else
+        content = (
+          <BlogList
+            posts={await listBlogPosts({
+              search: search || undefined,
+              language:
+                query.language === "en" || query.language === "fa"
+                  ? query.language
+                  : undefined,
+              status:
+                query.status === "draft" ||
+                query.status === "published" ||
+                query.status === "unpublished"
+                  ? query.status
+                  : undefined,
+            })}
+            locale={locale}
+            filters={{
+              search,
+              language:
+                typeof query.language === "string" ? query.language : "",
+              status: typeof query.status === "string" ? query.status : "",
+            }}
+          />
+        );
       break;
     }
     case "portfolio": {

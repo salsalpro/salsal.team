@@ -2513,3 +2513,81 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Article CMS additions reuse workspace tokens and controls. */
+.article-cms-form {
+  min-width: 0;
+}
+.article-section {
+  border-block-start: 1px solid var(--workspace-line);
+  padding-block: 16px;
+}
+.article-section summary {
+  cursor: pointer;
+  font-weight: 650;
+  margin-block-end: 16px;
+}
+.article-editor {
+  border: 1px solid var(--workspace-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.article-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-block-end: 1px solid var(--workspace-line);
+}
+.article-editor-toolbar .workspace-button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.article-editor-toolbar [aria-pressed="true"] {
+  color: var(--workspace-purple);
+  border-color: var(--workspace-purple);
+}
+.article-editor .tiptap {
+  overflow-x: auto;
+  min-height: 300px;
+  padding: 20px;
+  outline-offset: -3px;
+}
+.article-editor > .article-section,
+.article-editor > p {
+  margin-inline: 16px;
+}
+.article-editor .workspace-form-grid {
+  margin-block: 16px;
+}
+.article-preview {
+  border: 1px solid var(--workspace-line);
+  border-radius: 12px;
+  padding: 20px;
+}
+.article-cms-form img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.article-seo-previews {
+  margin-block: 20px;
+}
+.article-seo-previews section {
+  min-width: 0;
+  padding: 16px;
+  background: var(--workspace-bg);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.article-seo-previews strong,
+.article-seo-previews small {
+  display: block;
+}
+.article-cms-form time {
+  overflow-wrap: anywhere;
+}
+.article-cms-form ul {
+  padding-inline-start: 24px;
+  list-style: disc;
+}

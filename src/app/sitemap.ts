@@ -4,6 +4,7 @@ import {
   listPortfolio,
   listServiceSettings,
 } from "@/lib/repository";
+import { articleSitemap } from "@/lib/article-seo";
 export const dynamic = "force-dynamic";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -17,17 +18,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...(await listServiceSettings())
       .filter((s) => s.visible)
       .map((s) => `/services/${s.slug}`),
-    ...(await listBlogPosts({ publishedOnly: true })).map((p) => `/blog/${p.slug}`),
     ...(await listPortfolio()).map((p) => `/portfolio/${p.slug}`),
   ];
-  return paths.flatMap((path) =>
-    ["en", "fa"].map((locale) => ({
-      url: `${base}/${locale}${path}`,
-      alternates: {
-        languages: { en: `${base}/en${path}`, fa: `${base}/fa${path}` },
-      },
-      changeFrequency: "monthly" as const,
-      priority: path === "" ? 1 : 0.7,
-    })),
-  );
+  return [
+    ...paths.flatMap((path) =>
+      ["en", "fa"].map((locale) => ({
+        url: `${base}/${locale}${path}`,
+        alternates: {
+          languages: { en: `${base}/en${path}`, fa: `${base}/fa${path}` },
+        },
+        changeFrequency: "monthly" as const,
+        priority: path === "" ? 1 : 0.7,
+      })),
+    ),
+    ...articleSitemap(
+      await listBlogPosts({ publishedOnly: true, limit: null }),
+      base,
+    ),
+  ];
 }

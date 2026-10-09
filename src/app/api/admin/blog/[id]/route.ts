@@ -8,13 +8,18 @@ export async function PATCH(request: Request, context: IdContext) {
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id } = await context.params;
-    const post = (await updateBlogPost(
+    const post = await updateBlogPost(
       id,
       blogUpdateSchema.parse(await readJson(request)),
-    ));
+    );
     if (!post) throw new ApiError(404, "Article not found.");
     return Response.json({ ok: true, post });
   } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "23505")
+      return Response.json(
+        { error: "An article with this slug already exists in this language." },
+        { status: 409 },
+      );
     return failure(error);
   }
 }
@@ -23,7 +28,8 @@ export async function DELETE(request: Request, context: IdContext) {
     verifyOrigin(request);
     await requireApiUser(request, true);
     const { id } = await context.params;
-    if (!(await deleteBlogPost(id))) throw new ApiError(404, "Article not found.");
+    if (!(await deleteBlogPost(id)))
+      throw new ApiError(404, "Article not found.");
     return Response.json({ ok: true });
   } catch (error) {
     return failure(error);

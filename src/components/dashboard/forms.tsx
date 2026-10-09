@@ -59,7 +59,13 @@ export function useMutation(locale: Locale) {
     type: "success" | "error";
     message: string;
   } | null>(null);
-  async function mutate(url: string, body: unknown, method = "PATCH") {
+  async function mutate(
+    url: string,
+    body: unknown,
+    method = "PATCH",
+    onSuccess?: (result: Record<string, unknown>) => void,
+    showServerErrors = false,
+  ) {
     setPending(true);
     setFeedback(null);
     try {
@@ -68,18 +74,21 @@ export function useMutation(locale: Locale) {
         headers: { "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      const result: { error?: string } = await response.json();
+      const result: Record<string, unknown> & { error?: string } =
+        await response.json();
       if (!response.ok) {
         setFeedback({
           type: "error",
           message:
-            response.status === 400
-              ? messages.invalid
-              : response.status === 409
-                ? messages.conflict
-                : response.status === 401
-                  ? messages.auth
-                  : t.error,
+            showServerErrors && result.error
+              ? result.error
+              : response.status === 400
+                ? messages.invalid
+                : response.status === 409
+                  ? messages.conflict
+                  : response.status === 401
+                    ? messages.auth
+                    : t.error,
         });
         return false;
       }
@@ -87,6 +96,7 @@ export function useMutation(locale: Locale) {
         setFeedback({ type: "error", message: t.error });
         return false;
       }
+      onSuccess?.(result);
       setFeedback({ type: "success", message: t.saved });
       router.refresh();
       return true;
