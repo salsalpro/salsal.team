@@ -22,6 +22,9 @@ export function Brand({
           />
         </svg>
       </span>
+      <span>
+        salsal
+      </span>
     </Link>
   );
 }
