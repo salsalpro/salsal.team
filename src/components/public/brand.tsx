@@ -22,9 +22,6 @@ export function Brand({
           />
         </svg>
       </span>
-      <span>
-        salsal<span className="brand-period">.</span>
-      </span>
     </Link>
   );
 }
