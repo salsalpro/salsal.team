@@ -219,13 +219,15 @@ html[lang="fa"] .eyebrow {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   color: var(--ink);
-  font-size: 27px;
-  font-weight: 800;
-  letter-spacing: -1.2px;
   direction: ltr;
   line-height: 1;
+  flex-shrink: 0;
+}
+.brand-wordmark {
+  display: block;
+  width: 140px;
+  height: auto;
 }
 .brand-mark {
   width: 35px;
@@ -1587,8 +1589,8 @@ html[lang="fa"] .eyebrow {
   .container {
     padding-inline: 20px;
   }
-  .brand {
-    font-size: 25px;
+  .brand-wordmark {
+    width: 120px;
   }
   .brand-mark {
     width: 32px;
