@@ -1,4 +1,36 @@
 # Blog CMS master plan
+
+## Manual repair handoff — 2026-10-09 (latest)
+
+User requested exact manual steps as an alternative to connecting the agent. Prepared **NEON_MANUAL_REPAIR.md** (Persian console instructions) and **NEON_MANUAL_REPAIR.sql** (unchanged repository002 SQL wrapped in an atomic transaction, advisory/table locks, timeout, baseline/partial-schema guards, migration tracking and original-article count/fingerprint preservation). Existing migrations/002-blog-cms.sql and all application code are unchanged.
+
+Four isolated tests on the dedicated synthetic PostgreSQL55432 passed: full migration with bilingual legacy-field preservation and locale uniqueness; repeat execution stops; partial schema stops without additional changes; forced failure after DDL rolls back columns/indexes/constraint/history. Test harness: /tmp/salsal-verify-neon-manual-repair.mjs, generated disposable schemas cleaned. No main local or online data mutated. Local tests do not verify actual Neon state.
+
+Next: user follows manual guide to identify the correct production target, preserve an untouched schema+data recovery branch, create a separate test branch, run the whole SQL there, then run it on the production branch only after test/recovery checks. No new push/deployment or DATABASE_URL change is needed for applying this schema migration to the current app. If any STOP/error occurs, roll back and inspect the non-secret message; never remove guards. Actual online execution, backup availability and live recovery remain UNVERIFIED. Agent browser denial remains in force; manual user actions do not authorize bypassing it.
+
+Changed in this milestone: two new manual runbook/SQL files plus these six CMS checkpoint documents and root CHECKPOINT.md. No new dependency, application changes, commits, deployments or production writes. If user supplies execution results, start by reading schema/history and runtime logs; do not assume migration succeeded from the absence of a reply.
+
+
+## Production incident — 2026-10-09 (current priority)
+
+The production incident below supersedes the earlier local-only handoff. Preserve completed CMS implementation; do not rebuild. The owner committed/pushed CMS as `cad5a71b9b7e5af0b71f15df10ee149893f3a25e`; the agent did not commit, push or deploy. Selected target is Vercel project **salsal.team**, https://salsalteam.vercel.app, project `prj_twXMHNdZceowKiYLDqbXtVc25W0K`, team `team_NLOmqjIG8zKKOkCpaXmttaQq`. Its CMS deployment `dpl_6BcA3ZE2dZ9gs1NfUyp5TCJaNnWG` reached READY, but `/fa` fails with HTTP500.
+
+**Confirmed Vercel runtime error:** `column "primary_language" does not exist`, PostgreSQL `42703`, error digest `2366591631`. The deployed application queries that column when listing home-page articles. React441 is the production Server Components error wrapper. The deployed database is missing at least this required column; the full schema/migration history is not yet inspected. Do not assume all of002 is absent or blindly rerun partially applied SQL.
+
+User explicitly said **Leave the deployment running**, then requested a repair. No cancellation/rollback, production schema write, environment change, seed/import or data replacement was performed. Neon connection is still missing: integration search returned installed=false; no NEON_API_KEY or saved Neon CLI configuration exists. Attempt to open console.neon.tech was denied by browser security policy, reported as user permission declined. Do not retry that browser action through another surface or extract credentials through alternate channels. A separately authorized Neon integration connection is needed before database work can continue.
+
+Vercel DATABASE_URL exists as a sensitive metadata entry scoped to production and preview; its value was unavailable from the official API. Effective Neon project/branch/database and preview isolation remain unverified. Do not change that URL to localhost. No production backup or restore point has been verified. Local002 verification does not prove online readiness.
+
+### Exact next steps
+
+1. Have the user install/connect the previously suggested Neon integration using their existing account; never request a connection string or password in chat. Confirm that connection before using its tools. Browser access was denied and cannot be bypassed.
+2. Match the Neon production project/branch/database to the selected Vercel target. Inspect blog_post columns, constraints/indexes, blog_image and schema_migration in a READ ONLY transaction. Check actual migration history only after confirming its table exists. Read-only SQL draft: /tmp/salsal-cms-online-read-only-preflight.sql (temporary; review before executing).
+3. Review migrations/002-blog-cms.sql against the actual schema. It adds primary_language/editorial, locale unique indexes and blog_image while preserving legacy fields. If the online schema is partially modified, prepare a specifically reviewed forward repair instead of blindly rerunning002. Preserve records, identifiers, bilingual content and online credentials.
+4. Verify a usable production recovery point and test the exact migration on an isolated Neon branch; verify preview is bound to that branch before any test writes. Compare original article fields before/after and validate both locales. No local-to-production import, reset, seed, destructive down migration or SQLite transfer.
+5. Present the exact production migration action, isolation/test evidence and recovery strategy for approval required by the original execution brief. Do not ask for approval of speculative SQL. Apply only the approved action, then verify /fa and /en, blog/legacy pages, auth/admin access and absence of the runtime SQL error. Existing code does not auto-migrate on request startup. npm run db:setup also runs auth migrations and must not be used blindly as an incident fix.
+6. After restoring the site, resume CMS-04-02/CMS-05-02 real private Blob lifecycle verification. Existing editor/language/SEO/public features and their local passing tests must be preserved. Do not treat deployment READY or serialized image references as provider verification.
+
+## Earlier local implementation handoff (historical)
 Scope: existing article CMS only; preserve dashboard/site identity, Better Auth, all unrelated business logic, and every legacy language version. No production writes/deployments/commits.
 
 ## Verified baseline — 2026-10-09
