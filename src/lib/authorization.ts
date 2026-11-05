@@ -43,7 +43,7 @@ export async function requireApiUser(request: Request, admin = false) {
 
 export function verifyOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  const allowedOrigin = new URL(process.env.BETTER_AUTH_URL || request.url)
+  const allowedOrigin = new URL(process.env.BETTER_AUTH_URL || "https://salsal.pro" || request.url)
     .origin;
   if (
     (origin && origin !== allowedOrigin) ||
